@@ -3,8 +3,10 @@ import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.1
 const DATA_SCHEMA = "indique_ganhe_influencer";
 const API_BASE = "https://api.g1.datacrazy.io/api/v1";
 const PAGE_SIZE = 300;
-const MAX_PAGES_PER_INVOCATION = 12;
-const MIN_ROUTE_INTERVAL_MS = 3_100; // At most 20 calls/minute/route, below Data Crazy's default 60.
+const MAX_PAGES_PER_INVOCATION = 24;
+// 1.1s keeps this worker below the documented 60 requests/minute/route,
+// leaving room for the preflight request and small timing variations.
+const MIN_ROUTE_INTERVAL_MS = 1_100;
 const MAX_BODY_BYTES = 4_096;
 const FIRST_SYNC_MONTH = "2026-01-01";
 const BEFORE_FIRST_SYNC_MONTH = new Date(Date.parse(`${FIRST_SYNC_MONTH}T00:00:00.000Z`) - 1).toISOString();
