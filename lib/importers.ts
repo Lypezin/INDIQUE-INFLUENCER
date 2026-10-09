@@ -28,12 +28,27 @@ export type PerformanceImportRow = {
   routes: number;
 };
 
+export type PerformanceDataCoverageCity = {
+  city: string;
+  firstDate: string;
+  lastDate: string;
+  rowCount: number;
+};
+
+export type PerformanceDataCoverage = {
+  firstDate: string;
+  lastDate: string;
+  rowCount: number;
+  cities: PerformanceDataCoverageCity[];
+};
+
 export type ImportPreview<T> = {
   rows: T[];
   fileName: string;
   fileHash: string;
   warnings: string[];
   metrics: Record<string, number>;
+  dataCoverage?: PerformanceDataCoverage;
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -168,6 +183,48 @@ function validUuid(value: string): string | null {
   return UUID.test(cleaned) ? cleaned : null;
 }
 
+function parsePerformanceDate(value: string): string | null {
+  const cleaned = value.trim();
+  if (!cleaned) return null;
+
+  const iso = cleaned.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:\s|$)/);
+  if (iso) {
+    const [, year, month, day] = iso;
+    return makeIsoDate(Number(year), Number(month), Number(day));
+  }
+
+  const localized = cleaned.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})(?:\s|$)/);
+  if (localized) {
+    const first = Number(localized[1]);
+    const second = Number(localized[2]);
+    const year = Number(localized[3].length === 2 ? `20${localized[3]}` : localized[3]);
+    // Brazil uses day/month/year. Switch to month/day/year when the first
+    // component cannot be a month, which also accepts common US-formatted CSVs.
+    return first > 12
+      ? makeIsoDate(year, second, first)
+      : second > 12
+        ? makeIsoDate(year, first, second)
+        : makeIsoDate(year, second, first);
+  }
+
+  // Spreadsheet libraries may expose an unformatted Excel serial instead of
+  // the cell's displayed date string.
+  if (/^\d{4,6}(?:\.\d+)?$/.test(cleaned)) {
+    const serial = Number(cleaned);
+    if (serial > 0) {
+      const date = new Date(Date.UTC(1899, 11, 30) + Math.floor(serial) * 86_400_000);
+      if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
+    }
+  }
+  return null;
+}
+
+function makeIsoDate(year: number, month: number, day: number): string | null {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  return date.toISOString().slice(0, 10);
+}
+
 function cleanPhone(value: string): { phone: string | null; unavailable: boolean } {
   const phone = value.trim();
   if (!phone) return { phone: null, unavailable: false };
@@ -300,13 +357,17 @@ export async function parseDataCrazy(file: File): Promise<ImportPreview<Referral
 
 export async function parsePerformance(file: File): Promise<ImportPreview<PerformanceImportRow>> {
   const byUuid = new Map<string, PerformanceImportRow>();
+  const cityCoverage = new Map<string, PerformanceDataCoverageCity>();
   let invalidUuid = 0;
   let invalidRoutes = 0;
+  let invalidDataDate = 0;
   let repeatedRows = 0;
+  let firstDate: string | null = null;
+  let lastDate: string | null = null;
 
-  // Fixed spreadsheet positions: F UUID, G name, H region, R completed rides.
-  const { fileHash, sourceRows } = await forEachSpreadsheetRow(file, 18, [5, 6, 7, 17], (values) => {
-    const [rawUuid, name, region, rawRouteValue] = values;
+  // Fixed spreadsheet positions: A period date, F UUID, G name, H region, R completed rides.
+  const { fileHash, sourceRows } = await forEachSpreadsheetRow(file, 18, [0, 5, 6, 7, 17], (values) => {
+    const [rawDate, rawUuid, name, region, rawRouteValue] = values;
     if (!rawUuid) return;
     const uuid = validUuid(rawUuid);
     if (!uuid) {
@@ -319,6 +380,25 @@ export async function parsePerformance(file: File): Promise<ImportPreview<Perfor
       invalidRoutes += 1;
       return;
     }
+
+    const dataDate = parsePerformanceDate(rawDate);
+    if (!dataDate) {
+      invalidDataDate += 1;
+    } else {
+      firstDate = firstDate === null || dataDate < firstDate ? dataDate : firstDate;
+      lastDate = lastDate === null || dataDate > lastDate ? dataDate : lastDate;
+      const city = region.trim() || "Praça não informada";
+      const cityKey = normalizeText(city) || "praca nao informada";
+      const currentCity = cityCoverage.get(cityKey);
+      if (currentCity) {
+        if (dataDate < currentCity.firstDate) currentCity.firstDate = dataDate;
+        if (dataDate > currentCity.lastDate) currentCity.lastDate = dataDate;
+        currentCity.rowCount += 1;
+      } else {
+        cityCoverage.set(cityKey, { city, firstDate: dataDate, lastDate: dataDate, rowCount: 1 });
+      }
+    }
+
     const wholeRoutes = routes;
     const previous = byUuid.get(uuid);
     if (previous) {
@@ -338,17 +418,30 @@ export async function parsePerformance(file: File): Promise<ImportPreview<Perfor
   const warnings: string[] = [];
   if (invalidUuid) warnings.push(`${invalidUuid} linha(s) foram ignoradas por não conterem UUID válido.`);
   if (invalidRoutes) warnings.push(`${invalidRoutes} linha(s) foram ignoradas por terem uma quantidade de corridas inválida.`);
+  if (invalidDataDate) warnings.push(`${invalidDataDate} linha(s) válidas de corridas não tinham uma data reconhecida na coluna A e ficaram fora da cobertura de período.`);
   if (repeatedRows) warnings.push(`${repeatedRows} linha(s) do mesmo UUID foram somadas dentro desta importação.`);
   if (byUuid.size === 0) throw new Error("Nenhum UUID válido foi encontrado na coluna F.");
+  if (!firstDate || !lastDate || cityCoverage.size === 0) {
+    throw new Error("Nenhuma data válida foi encontrada na coluna A (data_do_periodo). Confira o arquivo antes de importar.");
+  }
+  const dataCoverage: PerformanceDataCoverage = {
+    firstDate,
+    lastDate,
+    rowCount: [...cityCoverage.values()].reduce((sum, item) => sum + item.rowCount, 0),
+    cities: [...cityCoverage.values()].sort((a, b) => a.city.localeCompare(b.city, "pt-BR")),
+  };
   return {
     rows: [...byUuid.values()],
     fileName: file.name,
     fileHash,
     warnings,
+    dataCoverage,
     metrics: {
       total: byUuid.size,
       invalidUuid,
       invalidRoutes,
+      invalidDataDate,
+      dataDateRows: dataCoverage.rowCount,
       sourceRows,
       repeatedRows,
       totalRoutes: [...byUuid.values()].reduce((sum, item) => sum + item.routes, 0),

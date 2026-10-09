@@ -73,6 +73,12 @@ export async function callAdminApi<T>(
   } else if (action === "performance-coverage") {
     const result = await supabase.schema(DATA_SCHEMA).rpc("performance_data_coverage");
     data = result.data; error = result.error;
+  } else if (action === "performance-coverage-update") {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("update_performance_data_coverage", {
+      p_file_hash: payload.fileHash,
+      p_data_coverage: payload.dataCoverage,
+    });
+    data = result.data; error = result.error;
   } else if (action === "account-name-set") {
     const result = await supabase.schema(DATA_SCHEMA).rpc("update_admin_display_name", {
       p_user_id: payload.userId,
@@ -94,6 +100,7 @@ export async function callAdminApi<T>(
       p_file_hash: payload.fileHash,
       p_metrics: payload.metrics,
       p_total_rows: payload.totalRows,
+      p_data_coverage: payload.dataCoverage,
     });
     data = result.data; error = result.error;
   } else if (action === "import-chunk") {
