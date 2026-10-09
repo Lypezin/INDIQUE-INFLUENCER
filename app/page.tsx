@@ -5,7 +5,7 @@ import type { Session } from "@supabase/supabase-js";
 import {
   ArrowDownUp, ArrowRight, Award, BarChart3, Check, CheckCircle2, ChevronDown,
   CircleAlert, ClipboardList, CloudUpload, Download, Eye, EyeOff, FileSpreadsheet,
-  Gift, LoaderCircle, LogOut, Mail, MapPin, Menu, Search, ShieldCheck, Users,
+  Gift, History, LoaderCircle, LogOut, Mail, MapPin, Menu, Search, ShieldCheck, Users, XCircle,
 } from "lucide-react";
 import { callAccessApi, callAdminApi, DATA_SCHEMA, getSupabase } from "@/lib/supabase";
 import {
@@ -31,11 +31,21 @@ type Referral = {
   influencer_name: string;
 };
 type ImportSummary = { id: string; kind: string; file_name: string; status: string; created_at: string; metrics: Record<string, number> };
+type ImportHistoryEntry = {
+  id: string; kind: "data_crazy" | "performance"; file_name: string; file_hash_prefix: string;
+  status: "staging" | "completed" | "failed" | "cancelled"; metrics: Record<string, number>;
+  expected_rows: number; staged_rows: number; created_at: string; completed_at: string | null;
+  finished_at: string | null; error_message: string | null; actor_email: string;
+  duration_seconds: number; last_event_message: string | null;
+};
+type ImportHistorySummary = { total: number; staging: number; completed: number; failed: number; cancelled: number };
+type ImportHistoryResult = { items: ImportHistoryEntry[]; total: number; summary: ImportHistorySummary };
+type ImportEvent = { id: number; event_type: string; message: string; details: Record<string, unknown>; created_at: string; actor_email: string };
 type Review = { id: string; uuid: string; name: string; region: string | null; raw_influencer: string; status: string };
 type Member = { user_id: string; email: string; role: Role; influencer_id: string | null; influencer_name: string | null };
 type PendingInvite = { id: string; email: string; role: Role; influencer_name: string | null; created_at: string };
 type AdminOverview = { influencers: Influencer[]; availableInfluencers: Influencer[]; imports: ImportSummary[]; reviews: Review[]; reviewCount: number; members: Member[]; invites: PendingInvite[]; referralCount: number; contributionTotal: number };
-type TabId = "dashboard" | "data-crazy" | "performance" | "reviews" | "accounts";
+type TabId = "dashboard" | "data-crazy" | "performance" | "reviews" | "accounts" | "imports";
 
 const fmtMoney = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
 const fmtNumber = (number: number) => new Intl.NumberFormat("pt-BR").format(number);
@@ -52,7 +62,16 @@ const adminTabs: { id: TabId; label: string; icon: typeof BarChart3 }[] = [
   { id: "performance", label: "Performance", icon: ArrowDownUp },
   { id: "reviews", label: "Revisões", icon: ClipboardList },
   { id: "accounts", label: "Acessos", icon: Users },
+  { id: "imports", label: "Importações", icon: History },
 ];
+
+function savedAdminTab(email: string): TabId {
+  if (typeof window === "undefined") return "dashboard";
+  try {
+    const value = window.localStorage.getItem(`indique-ganhe:admin-tab:${email.trim().toLowerCase()}`);
+    return adminTabs.some((tab) => tab.id === value) ? value as TabId : "dashboard";
+  } catch { return "dashboard"; }
+}
 
 export default function Home() {
   const supabase = useMemo(() => getSupabase(), []);
@@ -70,6 +89,13 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [onlyUnlocked, setOnlyUnlocked] = useState(false);
 
+  const selectTab = useCallback((tab: TabId) => {
+    setActiveTab(tab);
+    if (profile?.role !== "admin") return;
+    try { window.localStorage.setItem(`indique-ganhe:admin-tab:${profile.email.trim().toLowerCase()}`, tab); }
+    catch { /* The current view still works when browser storage is unavailable. */ }
+  }, [profile]);
+
   const loadWorkspace = useCallback(async () => {
     setLoading(true);
     setLoadError("");
@@ -82,7 +108,7 @@ export default function Home() {
         setInfluencer(null);
         setReferrals([]);
         setLastImportAt(null);
-        setActiveTab("dashboard");
+        setActiveTab(savedAdminTab(nextProfile.email));
       } else {
         const [{ data: influencerData, error: influencerError }, referralData, { data: importDate, error: importDateError }] = await Promise.all([
           supabase!.schema(DATA_SCHEMA).from("influencers").select("id,name,route_goal,prize_cents,is_demo").eq("id", nextProfile.influencer_id).single(),
@@ -163,7 +189,7 @@ export default function Home() {
           <Brand />
           <div className="mt-12 text-xs font-bold uppercase tracking-[.18em] text-[#63788e]">Menu</div>
           <nav className="mt-3 space-y-1.5">
-            {visibleTabs.map((tab) => <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => setActiveTab(tab.id)} />)}
+            {visibleTabs.map((tab) => <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => selectTab(tab.id)} />)}
           </nav>
           <div className="mt-auto rounded-2xl bg-[#eff5fc] p-4">
             <div className="flex size-9 items-center justify-center rounded-xl bg-white text-[#1f61af]"><ShieldCheck size={18} /></div>
@@ -185,11 +211,11 @@ export default function Home() {
             </div>
           </header>
 
-          {mobileMenu && <><button className="fixed inset-0 z-20 bg-[#112e53]/20 lg:hidden" aria-label="Fechar menu" onClick={() => setMobileMenu(false)}/><div className="fixed inset-x-0 top-[76px] z-30 border-b border-[#dfe6f0] bg-white px-4 py-3 shadow-lg lg:hidden">{visibleTabs.map((tab) => <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => { setActiveTab(tab.id); setMobileMenu(false); }} />)}</div></>}
+          {mobileMenu && <><button className="fixed inset-0 z-20 bg-[#112e53]/20 lg:hidden" aria-label="Fechar menu" onClick={() => setMobileMenu(false)}/><div className="fixed inset-x-0 top-[76px] z-30 border-b border-[#dfe6f0] bg-white px-4 py-3 shadow-lg lg:hidden">{visibleTabs.map((tab) => <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => { selectTab(tab.id); setMobileMenu(false); }} />)}</div></>}
           <div className="mx-auto max-w-[1320px] px-4 pb-12 pt-7 sm:px-8 sm:pt-9 lg:px-10">
             {loadError && <div className="mb-5 flex items-start gap-3 rounded-xl border border-[#f2d8bd] bg-[#fffaf4] p-4 text-sm text-[#84572f]"><CircleAlert size={18} className="mt-0.5 shrink-0" />{loadError}</div>}
             {!isAdmin ? <InfluencerDashboard referrals={referrals} influencer={influencer} lastImportAt={lastImportAt} search={search} setSearch={setSearch} onlyUnlocked={onlyUnlocked} setOnlyUnlocked={setOnlyUnlocked} /> : (
-              <AdminDashboard activeTab={activeTab} overview={overview} refresh={refreshAdmin} onTab={setActiveTab} />
+              <AdminDashboard activeTab={activeTab} overview={overview} refresh={refreshAdmin} onTab={selectTab} />
             )}
           </div>
         </section>
@@ -358,6 +384,7 @@ function AdminDashboard({ activeTab, overview, refresh, onTab }: { activeTab: Ta
     {activeTab === "performance" && <ImportPanel kind="performance" title="Performance" subtitle="Adiciona as corridas desta importação ao acumulado existente." overview={overview} refresh={refresh}/>}
     {activeTab === "reviews" && <ReviewsPanel overview={overview} refresh={refresh}/>}
     {activeTab === "accounts" && <AccountsPanel overview={overview} refresh={refresh}/>}
+    {activeTab === "imports" && <ImportHistoryPanel/>}
   </div>;
 }
 
@@ -365,7 +392,7 @@ function AdminHome({ overview, onTab }: { overview: AdminOverview; onTab: (tab: 
   const latest = overview.imports[0];
   return <><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Entregadores ativos" value={fmtNumber(overview.referralCount)} icon={<Users size={17}/>} sub="na lista atual do Data Crazy" color="teal"/><StatCard label="Corridas acumuladas" value={fmtNumber(overview.contributionTotal)} icon={<BarChart3 size={17}/>} sub="soma do histórico importado" color="blue"/><StatCard label="Atribuições em revisão" value={fmtNumber(overview.reviewCount ?? overview.reviews.length)} icon={<ClipboardList size={17}/>} sub="UUIDs aguardando responsável" color="gold"/><StatCard label="Contas vinculadas" value={fmtNumber(overview.members.length)} icon={<ShieldCheck size={17}/>} sub="administração e influenciadores" color="plum"/></div>
     <div className="mt-7 grid gap-4 xl:grid-cols-[1.15fr_.85fr]"><section className="rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><div className="flex items-start justify-between"><div><h2 className="text-[15px] font-bold">Próximas ações</h2><p className="mt-1 text-[13px] text-[#63788e]">Importe novas bases ou resolva atribuições pendentes.</p></div></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><ActionCard icon={<CloudUpload size={17}/>} title="Atualizar indicados" text="Troque a lista atual com o novo arquivo Data Crazy." onClick={() => onTab("data-crazy")}/><ActionCard icon={<ArrowDownUp size={17}/>} title="Somar performance" text="Acrescente novas corridas ao acumulado da campanha." onClick={() => onTab("performance")}/><ActionCard icon={<ClipboardList size={17}/>} title={`Revisar atribuições · ${overview.reviewCount ?? overview.reviews.length}`} text="Resolva UUIDs sem um influenciador reconhecido." onClick={() => onTab("reviews")}/><ActionCard icon={<Users size={17}/>} title="Gerenciar acessos" text="Convide cada parceiro para sua própria conta." onClick={() => onTab("accounts")}/></div></section>
-      <section className="rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><div className="flex items-start justify-between"><div><h2 className="text-[15px] font-bold">Última importação</h2><p className="mt-1 text-[13px] text-[#63788e]">Registro de processamento</p></div><FileSpreadsheet size={18} className="text-[#6b8f83]"/></div>{latest ? <><div className="mt-6 inline-flex items-center gap-1.5 rounded-full bg-[#eaf2fc] px-2.5 py-1 text-xs font-bold text-[#277957]"><Check size={12}/>{latest.status === "completed" ? "Concluída" : latest.status}</div><div className="mt-3 truncate text-sm font-semibold text-[#29435e]">{latest.file_name}</div><div className="mt-1 text-[13px] text-[#60758b]">{latest.kind === "data_crazy" ? "Data Crazy" : "Performance"} · {new Date(latest.created_at).toLocaleString("pt-BR")}</div><div className="mt-4 border-t border-[#e6ebf2] pt-3 text-xs text-[#63788e]">{fmtNumber(latest.metrics?.total ?? 0)} registros na última carga</div></> : <p className="mt-7 rounded-xl bg-[#f7faff] px-4 py-5 text-xs leading-5 text-[#63788e]">Ainda não há importações. Os arquivos de exemplo foram usados apenas para validar o leitor; nenhum dado foi carregado.</p>}</section></div>
+      <section className="rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><div className="flex items-start justify-between gap-3"><div><h2 className="text-[15px] font-bold">Última importação</h2><p className="mt-1 text-[13px] text-[#63788e]">A carga mais recente entre todos os administradores.</p></div><button onClick={() => onTab("imports")} className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[12px] font-bold text-[#205b9e] hover:bg-[#f2f7fd] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc2]">Ver histórico<ArrowRight size={14}/></button></div>{latest ? <><div className="mt-6 inline-flex items-center gap-1.5 rounded-full bg-[#eaf2fc] px-2.5 py-1 text-xs font-bold text-[#277957]"><Check size={12}/>{latest.status === "completed" ? "Concluída" : latest.status}</div><div className="mt-3 truncate text-sm font-semibold text-[#29435e]">{latest.file_name}</div><div className="mt-1 text-[13px] text-[#60758b]">{latest.kind === "data_crazy" ? "Data Crazy" : "Performance"} · {new Date(latest.created_at).toLocaleString("pt-BR")}</div><div className="mt-4 border-t border-[#e6ebf2] pt-3 text-xs text-[#63788e]">{fmtNumber(latest.metrics?.total ?? 0)} registros na última carga</div></> : <p className="mt-7 rounded-xl bg-[#f7faff] px-4 py-5 text-xs leading-5 text-[#63788e]">Ainda não há importações. Os arquivos de exemplo foram usados apenas para validar o leitor; nenhum dado foi carregado.</p>}</section></div>
     <section className="mt-4 rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><div className="flex items-center justify-between"><div><h2 className="text-[15px] font-bold">Regras de premiação</h2><p className="mt-1 text-[13px] text-[#63788e]">Um prêmio por entregador ao alcançar a meta.</p></div><Gift size={18} className="text-[#b3822e]"/></div><div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{overview.influencers.map((item) => <div key={item.id} className="flex items-center justify-between rounded-xl bg-[#f7faff] px-3.5 py-3"><span className="text-xs font-semibold">{item.name}</span><span className="text-xs font-semibold text-[#60758b]">{item.route_goal} corridas <span className="mx-1 text-[#c0c9c7">·</span><strong className="text-[#205b9e]">{fmtMoney(item.prize_cents)}</strong></span></div>)}</div></section>
   </>;
 }
@@ -435,9 +462,11 @@ function ImportPanel({ kind, title, subtitle, overview, refresh }: { kind: "data
       setMessage(kind === "data_crazy" ? "Lista Data Crazy substituída com sucesso." : "Corridas adicionadas ao acumulado.");
       setPreview(null); setDuplicate(false); setBatchId(""); await refresh();
     } catch (cause) {
-      if (activeBatchId) await callAdminApi("import-cancel", { batchId: activeBatchId }).catch(() => undefined);
+      const message = cause instanceof Error ? cause.message : "A importação não foi concluída.";
+      if (activeBatchId) await callAdminApi("import-fail", { batchId: activeBatchId, errorMessage: message })
+        .catch(() => callAdminApi("import-cancel", { batchId: activeBatchId }).catch(() => undefined));
       setBatchId("");
-      setError(cause instanceof Error ? cause.message : "A importação não foi concluída.");
+      setError(message);
     }
     finally { setBusy(false); }
   }
@@ -447,6 +476,134 @@ function ImportPanel({ kind, title, subtitle, overview, refresh }: { kind: "data
     {error && <p role="alert" className="mt-4 rounded-xl bg-[#fff3ef] px-3.5 py-3 text-xs text-[#a94b37]">{error}</p>}{message && <p role="status" className="mt-4 rounded-xl bg-[#eaf2fc] px-3.5 py-3 text-xs text-[#205b9e]">{message}</p>}
     {preview && <div className="mt-5 rounded-xl border border-[#e5ebf4] bg-white p-4"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><div className="truncate text-[13px] font-bold">{preview.fileName}</div><div className="mt-1 text-xs text-[#60758b]">SHA-256 · {preview.fileHash.slice(0, 18)}…</div></div><span className="rounded-full bg-[#eaf1fa] px-2.5 py-1 text-xs font-bold text-[#205b9e]">Pronto para importar</span></div><div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{Object.entries(preview.metrics).slice(0, 4).map(([label, value]) => <div key={label} className="rounded-lg bg-[#f7faff] px-3 py-2"><div className="text-xs text-[#697f94]">{label.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)}</div><div className="mt-1 text-sm font-bold">{fmtNumber(value)}</div></div>)}</div>{preview.warnings.length > 0 && <div className="mt-4 space-y-1.5 rounded-lg bg-[#fff9ed] p-3 text-xs leading-4 text-[#8a6532]">{preview.warnings.map((warning) => <div key={warning} className="flex gap-2"><CircleAlert size={13} className="mt-0.5 shrink-0"/>{warning}</div>)}</div>}{duplicate && <div className="mt-4 rounded-lg border border-[#f1d9ae] bg-[#fff9ed] p-3 text-[13px] leading-5 text-[#795c2f]">Este arquivo já foi importado antes. A Performance soma a importação novamente e pode duplicar corridas. Deseja continuar mesmo assim?</div>}{busy && <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-[#e8eef7]"><div className="h-full rounded-full bg-[#2f6fc2] transition-all" style={{width:`${progress}%`}}/></div>}<div className="mt-4 flex flex-wrap items-center justify-end gap-2"><button onClick={() => { if (batchId) void callAdminApi("import-cancel", { batchId }).catch(() => undefined); setBatchId(""); setPreview(null); setDuplicate(false); }} disabled={busy} className="h-11 rounded-lg px-3 text-[13px] font-semibold text-[#60758b] hover:bg-[#f6f8f7]">Cancelar</button><button onClick={() => void importFile(duplicate)} disabled={busy} className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#185aa9] px-4 text-[13px] font-bold text-white hover:bg-[#114886] disabled:opacity-55">{busy ? <LoaderCircle size={14} className="animate-spin"/> : <Check size={14}/>} {duplicate ? "Continuar e somar novamente" : kind === "data_crazy" ? "Substituir lista atual" : "Adicionar ao acumulado"}</button></div></div>}
   </section><div className="space-y-4"><section className="rounded-2xl border border-[#dfe6f0] bg-white p-5"><h3 className="text-[13px] font-bold">Mapeamento automático</h3><div className="mt-4 space-y-3 text-[13px] text-[#60758b]">{(kind === "data_crazy" ? [["Entregador", "B · Nome"], ["UUID", "AH · Identificador"], ["Influenciador", "AI · Indicação"], ["Região", "AN · Praça"], ["Contato", "D · Telefone · K · CPF"]] : [["UUID", "F · Identificador"], ["Entregador", "G · Nome"], ["Praça", "H · Região"], ["Corridas", "R · Pedidos aceitos e concluídos"]]).map(([a,b])=><div key={a} className="flex justify-between gap-3 border-b border-[#edf1f6] pb-2.5 last:border-0 last:pb-0"><span>{a}</span><span className="text-right font-semibold text-[#29435e]">{b}</span></div>)}</div></section><section className="rounded-2xl bg-[#eaf1fa] p-5"><div className="flex items-center gap-2 text-[13px] font-bold text-[#266a55]"><ShieldCheck size={15}/>Importação protegida</div><p className="mt-2 text-xs leading-[18px] text-[#60758b]">{kind === "data_crazy" ? "A nova lista só entra depois de validar o arquivo. A substituição é atômica: se algo falhar, a lista anterior continua intacta." : "Cada UUID é somado dentro do arquivo e depois acrescido ao histórico. Reimportações intencionais somam novamente."}</p>{lastSame && <div className="mt-3 border-t border-[#dce8f6] pt-3 text-xs text-[#60758b]">Último arquivo: <span className="font-semibold">{lastSame.file_name}</span></div>}</section></div></div>;
+}
+
+const historyStatusLabels: Record<ImportHistoryEntry["status"], string> = {
+  staging: "Em andamento", completed: "Concluída", failed: "Falhou", cancelled: "Cancelada",
+};
+const importMetricLabels: Record<string, string> = {
+  total: "Linhas válidas", ambiguous: "Para revisar", ignored: "Ignoradas",
+  invalidUuid: "UUID inválido", phoneUnavailable: "Telefone indisponível",
+  invalidCpf: "CPF omitido", duplicateUuids: "UUID duplicado", invalidRoutes: "Corridas inválidas",
+  sourceRows: "Linhas lidas", repeatedRows: "Linhas somadas", totalRoutes: "Corridas na carga",
+};
+
+function formatImportTime(value: string | null) {
+  return value ? new Date(value).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "—";
+}
+
+function formatImportDuration(seconds: number) {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ${seconds % 60}s`;
+  return `${Math.floor(seconds / 3600)} h ${Math.floor((seconds % 3600) / 60)} min`;
+}
+
+function ImportHistoryPanel() {
+  const [items, setItems] = useState<ImportHistoryEntry[]>([]);
+  const [summary, setSummary] = useState<ImportHistorySummary>({ total: 0, staging: 0, completed: 0, failed: 0, cancelled: 0 });
+  const [total, setTotal] = useState(0);
+  const [status, setStatus] = useState("all");
+  const [kind, setKind] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [openBatch, setOpenBatch] = useState("");
+  const [events, setEvents] = useState<Record<string, ImportEvent[]>>({});
+  const [eventErrors, setEventErrors] = useState<Record<string, string>>({});
+  const [loadingEvents, setLoadingEvents] = useState("");
+
+  useEffect(() => {
+    let current = true;
+    setLoading(true); setError("");
+    callAdminApi<ImportHistoryResult>("import-history", { limit: 25, offset: 0, status, kind })
+      .then((result) => {
+        if (!current) return;
+        setItems(result.items ?? []); setTotal(result.total ?? 0);
+        setSummary(result.summary ?? { total: 0, staging: 0, completed: 0, failed: 0, cancelled: 0 });
+      })
+      .catch((cause) => { if (current) setError(cause instanceof Error ? cause.message : "Não foi possível carregar o histórico."); })
+      .finally(() => { if (current) setLoading(false); });
+    return () => { current = false; };
+  }, [status, kind, refreshKey]);
+
+  async function loadMore() {
+    setLoadingMore(true); setError("");
+    try {
+      const result = await callAdminApi<ImportHistoryResult>("import-history", { limit: 25, offset: items.length, status, kind });
+      setItems((current) => [...current, ...(result.items ?? [])]); setTotal(result.total ?? 0);
+      setSummary(result.summary ?? summary);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível carregar mais importações."); }
+    finally { setLoadingMore(false); }
+  }
+
+  async function toggleEvents(batchId: string) {
+    if (openBatch === batchId) { setOpenBatch(""); return; }
+    setOpenBatch(batchId);
+    if (events[batchId]) return;
+    setLoadingEvents(batchId); setEventErrors((current) => ({ ...current, [batchId]: "" }));
+    try {
+      const rows = await callAdminApi<ImportEvent[]>("import-events", { batchId });
+      setEvents((current) => ({ ...current, [batchId]: rows ?? [] }));
+    } catch (cause) {
+      setEventErrors((current) => ({ ...current, [batchId]: cause instanceof Error ? cause.message : "Não foi possível abrir as etapas." }));
+    } finally { setLoadingEvents(""); }
+  }
+
+  return <div className="space-y-4">
+    <section className="rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+        <div><h2 className="text-[18px] font-bold tracking-[-.02em]">Log de importações</h2><p className="mt-1 text-[13px] text-[#60758b]">Todas as cargas de todas as contas administrativas, com etapas e responsáveis.</p></div>
+        <button onClick={() => setRefreshKey((value) => value + 1)} disabled={loading} className="inline-flex h-11 w-fit items-center gap-2 rounded-lg border border-[#d4deeb] bg-white px-3.5 text-[13px] font-semibold text-[#536d70] hover:bg-[#f7faff] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc2] disabled:opacity-55"><History size={15}/>{loading ? "Atualizando…" : "Atualizar log"}</button>
+      </div>
+      <div className="mt-5 grid grid-cols-2 overflow-hidden rounded-xl border border-[#e5ebf4] sm:grid-cols-4">
+        {([["Todas", summary.total], ["Concluídas", summary.completed], ["Em andamento", summary.staging], ["Falhas e canceladas", summary.failed + summary.cancelled]] as const).map(([label, value], index) => <div key={label} className={`px-3 py-3 ${index % 2 ? "border-l" : ""} ${index > 1 ? "border-t sm:border-t-0" : ""} ${index === 2 ? "sm:border-l" : ""} border-[#e5ebf4]`}><div className="text-[11px] font-semibold text-[#63788e]">{label}</div><div className="mt-1 text-lg font-bold tabular-nums text-[#203b58]">{fmtNumber(value)}</div></div>)}
+      </div>
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <label className="flex flex-1 flex-col gap-1 text-[11px] font-semibold text-[#63788e]">Status<select value={status} onChange={(event) => setStatus(event.target.value)} className="h-11 rounded-lg border border-[#d4deeb] bg-white px-3 text-[13px] font-medium text-[#29435e] focus:border-[#2f6fc2] focus:outline-none focus:ring-2 focus:ring-[#d7e8fa]"><option value="all">Todos os status</option><option value="staging">Em andamento</option><option value="completed">Concluídas</option><option value="failed">Com falha</option><option value="cancelled">Canceladas</option></select></label>
+        <label className="flex flex-1 flex-col gap-1 text-[11px] font-semibold text-[#63788e]">Planilha<select value={kind} onChange={(event) => setKind(event.target.value)} className="h-11 rounded-lg border border-[#d4deeb] bg-white px-3 text-[13px] font-medium text-[#29435e] focus:border-[#2f6fc2] focus:outline-none focus:ring-2 focus:ring-[#d7e8fa]"><option value="all">Todos os tipos</option><option value="data_crazy">Data Crazy</option><option value="performance">Performance</option></select></label>
+      </div>
+    </section>
+
+    {error && <p role="alert" className="rounded-xl bg-[#fff3ef] px-4 py-3 text-[13px] text-[#a94b37]">{error}</p>}
+    {loading && items.length === 0 ? <div className="rounded-xl border border-[#dfe6f0] bg-white px-5 py-12 text-center text-[13px] text-[#60758b]"><LoaderCircle className="mx-auto mb-3 animate-spin" size={19}/>Carregando as importações…</div> : items.length === 0 ? <div className="rounded-xl border border-[#dfe6f0] bg-white"><EmptyState title="Nenhuma importação encontrada" detail="Ajuste os filtros ou atualize o log para consultar as cargas feitas por qualquer administrador."/></div> : <div className="space-y-3">
+      {items.map((item) => {
+        const progress = item.expected_rows > 0 ? Math.min(100, Math.round(item.staged_rows / item.expected_rows * 100)) : 0;
+        const open = openBatch === item.id;
+        const badgeClass = item.status === "completed" ? "bg-[#eaf2fc] text-[#205b9e]" : item.status === "staging" ? "bg-[#fff8e8] text-[#8a6532]" : item.status === "failed" ? "bg-[#fff3ef] text-[#a94b37]" : "bg-[#f0f3f7] text-[#64758a]";
+        return <article key={item.id} className="overflow-hidden rounded-xl border border-[#dfe6f0] bg-white">
+          <div className="p-4 sm:p-5">
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+              <div className="flex min-w-0 items-start gap-3"><div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#eaf1fa] text-[#205b9e]"><FileSpreadsheet size={17}/></div><div className="min-w-0"><div className="break-all text-[13px] font-bold text-[#203b58]">{item.file_name}</div><div className="mt-1 text-xs text-[#60758b]">{item.kind === "data_crazy" ? "Data Crazy" : "Performance"} · por <span className="font-semibold text-[#405b76]">{item.actor_email}</span></div></div></div>
+              <span className={`inline-flex w-fit shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-bold ${badgeClass}`}>{item.status === "completed" ? <CheckCircle2 size={13}/> : item.status === "failed" ? <CircleAlert size={13}/> : item.status === "cancelled" ? <XCircle size={13}/> : <LoaderCircle size={13} className="animate-spin"/>}{historyStatusLabels[item.status]}</span>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-y-3 border-t border-[#edf1f6] pt-3 text-[12px] sm:grid-cols-4 sm:gap-3">
+              <div><div className="text-[10px] font-semibold uppercase tracking-[.07em] text-[#8191a2]">Iniciada</div><div className="mt-1 font-semibold text-[#405b76]">{formatImportTime(item.created_at)}</div></div>
+              <div><div className="text-[10px] font-semibold uppercase tracking-[.07em] text-[#8191a2]">Duração</div><div className="mt-1 font-semibold text-[#405b76]">{formatImportDuration(item.duration_seconds)}</div></div>
+              <div><div className="text-[10px] font-semibold uppercase tracking-[.07em] text-[#8191a2]">Linhas</div><div className="mt-1 font-semibold tabular-nums text-[#405b76]">{fmtNumber(item.staged_rows)} / {fmtNumber(item.expected_rows)}</div></div>
+              <div><div className="text-[10px] font-semibold uppercase tracking-[.07em] text-[#8191a2]">Última etapa</div><div className="mt-1 line-clamp-1 font-semibold text-[#405b76]">{item.last_event_message || "Sem etapa registrada"}</div></div>
+            </div>
+            {item.status === "staging" && <div className="mt-3"><div className="mb-1 flex justify-between text-[11px] text-[#60758b]"><span>Recebimento dos dados</span><span className="font-bold tabular-nums">{progress}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-[#e8eef7]"><div className="h-full rounded-full bg-[#2f6fc2] transition-all" style={{ width: `${progress}%` }}/></div></div>}
+            <div className="mt-3 flex justify-end"><button onClick={() => void toggleEvents(item.id)} aria-expanded={open} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-bold text-[#205b9e] hover:bg-[#f2f7fd] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc2]">{open ? "Ocultar detalhes" : "Ver etapas e detalhes"}<ChevronDown size={14} className={`transition-transform ${open ? "rotate-180" : ""}`}/></button></div>
+          </div>
+          {open && <div className="border-t border-[#e5ebf4] bg-[#fbfcfe] px-4 py-4 sm:px-5">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div><div className="text-[10px] font-bold uppercase tracking-[.07em] text-[#8191a2]">Arquivo · SHA-256</div><div className="mt-1 break-all text-xs font-semibold text-[#405b76]">{item.file_hash_prefix}…</div></div>
+              <div><div className="text-[10px] font-bold uppercase tracking-[.07em] text-[#8191a2]">Finalizada</div><div className="mt-1 text-xs font-semibold text-[#405b76]">{formatImportTime(item.finished_at || item.completed_at)}</div></div>
+              <div><div className="text-[10px] font-bold uppercase tracking-[.07em] text-[#8191a2]">Lote</div><div className="mt-1 break-all text-xs text-[#60758b]">{item.id}</div></div>
+            </div>
+            {Object.entries(item.metrics ?? {}).some(([key, value]) => key !== "total" && value > 0) && <div className="mt-4 flex flex-wrap gap-2">{Object.entries(item.metrics).filter(([key, value]) => key !== "total" && value > 0).map(([key, value]) => <span key={key} className="rounded-lg bg-white px-2.5 py-1.5 text-[11px] text-[#536c84]"><strong className="tabular-nums text-[#29435e]">{fmtNumber(value)}</strong> {importMetricLabels[key] ?? key}</span>)}</div>}
+            {item.error_message && <div className="mt-4 rounded-lg bg-[#fff3ef] px-3 py-2.5 text-[12px] leading-5 text-[#a94b37]"><strong>Erro registrado:</strong> {item.error_message}</div>}
+            <div className="mt-4 border-t border-[#e5ebf4] pt-3">
+              <div className="text-[11px] font-bold uppercase tracking-[.08em] text-[#63788e]">Linha do tempo</div>
+              {loadingEvents === item.id ? <div className="mt-3 flex items-center gap-2 text-xs text-[#60758b]"><LoaderCircle size={14} className="animate-spin"/>Carregando etapas…</div> : eventErrors[item.id] ? <p role="alert" className="mt-3 text-xs text-[#a94b37]">{eventErrors[item.id]}</p> : <ol className="mt-3 space-y-3 border-l border-[#d7e1ec] pl-4">{(events[item.id] ?? []).map((event) => <li key={event.id} className="relative"><span className={`absolute -left-[20px] top-1.5 size-2 rounded-full ${event.event_type === "failed" ? "bg-[#c65e4c]" : event.event_type === "completed" ? "bg-[#2f6fc2]" : "bg-[#8fa3b8]"}`}/><div className="flex flex-col justify-between gap-1 sm:flex-row"><p className="text-[12px] leading-5 text-[#405b76]">{event.message}</p><time className="shrink-0 text-[10px] text-[#8191a2]">{formatImportTime(event.created_at)} · {event.actor_email}</time></div></li>)}</ol>}
+            </div>
+          </div>}
+        </article>;
+      })}
+    </div>}
+    {items.length > 0 && items.length < total && <div className="flex justify-center"><button onClick={() => void loadMore()} disabled={loadingMore} className="inline-flex h-11 items-center gap-2 rounded-lg border border-[#d4deeb] bg-white px-4 text-[13px] font-semibold text-[#536d70] hover:bg-[#f7faff] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc2] disabled:opacity-55">{loadingMore ? <LoaderCircle size={14} className="animate-spin"/> : null}{loadingMore ? "Carregando…" : `Carregar mais · ${fmtNumber(items.length)} de ${fmtNumber(total)}`}</button></div>}
+  </div>;
 }
 
 function ReviewsPanel({ overview, refresh }: { overview: AdminOverview; refresh: () => Promise<void> }) {

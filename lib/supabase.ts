@@ -75,6 +75,25 @@ export async function callAdminApi<T>(
   } else if (action === "import-cancel") {
     const result = await supabase.schema(DATA_SCHEMA).rpc("cancel_import", { p_batch_id: payload.batchId });
     data = result.data; error = result.error;
+  } else if (action === "import-fail") {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("fail_import", {
+      p_batch_id: payload.batchId,
+      p_error_message: payload.errorMessage,
+    });
+    data = result.data; error = result.error;
+  } else if (action === "import-history") {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("list_import_history", {
+      p_limit: payload.limit,
+      p_offset: payload.offset,
+      p_status: payload.status,
+      p_kind: payload.kind,
+    });
+    data = result.data; error = result.error;
+  } else if (action === "import-events") {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("list_import_events", {
+      p_batch_id: payload.batchId,
+    });
+    data = result.data; error = result.error;
   } else if (action === "review-assign") {
     const result = await supabase.schema(DATA_SCHEMA).rpc("assign_review", {
       p_review_id: payload.reviewId,
