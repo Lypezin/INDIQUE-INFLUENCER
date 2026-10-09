@@ -6,6 +6,8 @@ const PAGE_SIZE = 100;
 const MAX_PAGES_PER_INVOCATION = 12;
 const MIN_ROUTE_INTERVAL_MS = 3_100; // At most 20 calls/minute/route, below Data Crazy's default 60.
 const MAX_BODY_BYTES = 4_096;
+const FIRST_SYNC_MONTH = "2020-01-01";
+const BEFORE_FIRST_SYNC_MONTH = new Date(Date.parse(`${FIRST_SYNC_MONTH}T00:00:00.000Z`) - 1).toISOString();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // These are the nine pipeline IDs confirmed for the Influencers group. The
@@ -33,6 +35,9 @@ type Claim = {
   phase: "businesses" | "leads" | "ready";
   businessesSkip: number;
   leadsSkip: number;
+  businessMonth: string;
+  leadMonth: string;
+  snapshotUntil: string;
 };
 
 class SyncError extends Error {
@@ -279,13 +284,21 @@ function toClaim(value: unknown): Claim | null {
   const phase = item.phase;
   const runId = text(item.runId);
   const leaseToken = text(item.leaseToken);
-  if (!runId || !leaseToken || (phase !== "businesses" && phase !== "leads" && phase !== "ready")) return null;
+  const businessMonth = text(item.businessMonth);
+  const leadMonth = text(item.leadMonth);
+  const snapshotUntil = text(item.snapshotUntil);
+  if (!runId || !leaseToken || !/^\d{4}-\d{2}-\d{2}$/.test(businessMonth)
+    || !/^\d{4}-\d{2}-\d{2}$/.test(leadMonth) || !Number.isFinite(Date.parse(snapshotUntil))
+    || (phase !== "businesses" && phase !== "leads" && phase !== "ready")) return null;
   return {
     runId,
     leaseToken,
     phase,
     businessesSkip: Number(item.businessesSkip) || 0,
     leadsSkip: Number(item.leadsSkip) || 0,
+    businessMonth,
+    leadMonth,
+    snapshotUntil,
   };
 }
 
@@ -364,8 +377,33 @@ async function checkPipelines(env: Env): Promise<void> {
   }
 }
 
-function pageParams(phase: Claim["phase"], skip: number): URLSearchParams {
+async function checkDateCoverage(env: Env): Promise<void> {
+  // The monthly cursor starts in 2020. Fail closed if the tenant has older
+  // records, so a new historic import never silently disappears.
+  for (const route of ["businesses", "leads"] as const) {
+    const params = new URLSearchParams({ skip: "0", take: "1" });
+    params.set("filter[createdAtLessOrEqual]", BEFORE_FIRST_SYNC_MONTH);
+    const { data } = await apiGet(env, route, params);
+    if (data.length > 0) {
+      throw new SyncError("Há registros Data Crazy anteriores a 2020. A lista atual foi preservada para ampliar o período da coleta.", false);
+    }
+  }
+}
+
+function nextMonth(month: string): string {
+  const date = new Date(`${month}T00:00:00.000Z`);
+  if (!Number.isFinite(date.getTime())) throw new SyncError("Mês de coleta inválido.", false);
+  date.setUTCMonth(date.getUTCMonth() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function pageParams(phase: Claim["phase"], skip: number, month: string, snapshotUntil: string): URLSearchParams {
   const params = new URLSearchParams({ skip: String(skip), take: String(PAGE_SIZE) });
+  const start = `${month}T00:00:00.000Z`;
+  const end = new Date(Math.min(Date.parse(snapshotUntil), Date.parse(`${nextMonth(month)}T00:00:00.000Z`) - 1));
+  if (start > end.toISOString()) throw new SyncError("Janela de coleta inválida.", false);
+  params.set("filter[createdAtGreaterOrEqual]", start);
+  params.set("filter[createdAtLessOrEqual]", end.toISOString());
   if (phase === "leads") params.set("complete[additionalFields]", "true");
   return params;
 }
@@ -399,6 +437,7 @@ async function work(service: SupabaseClient, env: Env, runId?: string, maxPages 
   if (!claim) return status(service, runId);
   try {
     await checkPipelines(env);
+    await checkDateCoverage(env);
     let published = false;
     let pauseSeconds = 1;
     for (let page = 0; page < maxPages; page += 1) {
@@ -412,9 +451,13 @@ async function work(service: SupabaseClient, env: Env, runId?: string, maxPages 
       }
       const phase = claim.phase;
       const cursor = phase === "businesses" ? claim.businessesSkip : claim.leadsSkip;
-      const source = await apiGet(env, phase, pageParams(phase, cursor));
+      const month = phase === "businesses" ? claim.businessMonth : claim.leadMonth;
+      const source = await apiGet(env, phase, pageParams(phase, cursor, month, claim.snapshotUntil));
       const nextCursor = cursor + source.data.length;
       const done = source.data.length < PAGE_SIZE;
+      if (!done && nextCursor >= 10_000) {
+        throw new SyncError("Um mês atingiu o limite de paginação da Data Crazy. A lista atual foi preservada.", false);
+      }
       const rows = source.data.map(phase === "businesses" ? businessRow : leadRow).filter(Boolean);
       const next = object(rpcData(
         await service.schema(DATA_SCHEMA).rpc("append_data_crazy_sync_page", {
@@ -439,8 +482,13 @@ async function work(service: SupabaseClient, env: Env, runId?: string, maxPages 
       if (Number(next.cursor) !== nextCursor) {
         throw new SyncError("Cursor inesperado da sincronização.", false);
       }
-      if (phase === "businesses") claim.businessesSkip = nextCursor;
-      else claim.leadsSkip = nextCursor;
+      if (phase === "businesses") {
+        claim.businessesSkip = done ? 0 : nextCursor;
+        if (done && nextPhase === "businesses") claim.businessMonth = nextMonth(month);
+      } else {
+        claim.leadsSkip = done ? 0 : nextCursor;
+        if (done && nextPhase === "leads") claim.leadMonth = nextMonth(month);
+      }
       claim.phase = nextPhase;
       if (source.remaining !== null && source.remaining <= 2) {
         pauseSeconds = Math.max(1, source.resetSeconds ?? 60);

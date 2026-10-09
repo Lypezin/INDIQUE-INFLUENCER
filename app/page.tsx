@@ -45,7 +45,7 @@ type ImportEvent = { id: number; event_type: string; message: string; details: R
 type DataCrazySyncRun = {
   id: string; status: "running" | "completed" | "failed"; phase: string;
   processed: number; total: number; metrics: Record<string, number>;
-  errorMessage: string | null; startedAt: string; completedAt: string | null;
+  windowMonth?: string | null; errorMessage: string | null; startedAt: string; completedAt: string | null;
 };
 type Review = { id: string; uuid: string; name: string; region: string | null; raw_influencer: string; status: string };
 type Member = { user_id: string; email: string; role: Role; display_name: string | null; influencer_id: string | null; influencer_name: string | null };
@@ -480,7 +480,7 @@ function DataCrazySyncPanel({ refresh }: { refresh: () => Promise<void> }) {
       const started = await callDataCrazySync<DataCrazySyncRun & { runId?: string }>({ action: "start" });
       const runId = started.runId ?? started.id;
       if (!runId) throw new Error("A Data Crazy não retornou o identificador da sincronização.");
-      setRun({ id: runId, status: started.status, phase: started.phase, processed: started.processed ?? 0, total: started.total ?? 0, metrics: started.metrics ?? {}, errorMessage: started.errorMessage ?? null, startedAt: started.startedAt ?? new Date().toISOString(), completedAt: started.completedAt ?? null });
+      setRun({ id: runId, status: started.status, phase: started.phase, processed: started.processed ?? 0, total: started.total ?? 0, metrics: started.metrics ?? {}, windowMonth: started.windowMonth ?? null, errorMessage: started.errorMessage ?? null, startedAt: started.startedAt ?? new Date().toISOString(), completedAt: started.completedAt ?? null });
       try {
         const current = await callDataCrazySync<DataCrazySyncRun | null>({ action: "status", runId });
         if (current) {
@@ -497,6 +497,7 @@ function DataCrazySyncPanel({ refresh }: { refresh: () => Promise<void> }) {
 
   const progress = run && run.total > 0 ? Math.min(100, Math.round(run.processed / run.total * 100)) : null;
   const statusLabel = run?.status === "running" ? "Em andamento" : run?.status === "completed" ? "Concluída" : "Falhou";
+  const monthLabel = run?.status === "running" && run.windowMonth ? ` · ${run.windowMonth.slice(5, 7)}/${run.windowMonth.slice(0, 4)}` : "";
 
   return <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(280px,.75fr)]">
     <section className="rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6">
@@ -508,7 +509,7 @@ function DataCrazySyncPanel({ refresh }: { refresh: () => Promise<void> }) {
       {error && <p role="alert" className="mt-5 rounded-lg bg-[#fff3ef] px-3.5 py-3 text-[13px] leading-5 text-[#a94b37]">{error}</p>}
       {loading ? <div role="status" className="mt-6 flex items-center gap-2 text-[13px] text-[#60758b]"><LoaderCircle size={16} className="animate-spin"/>Consultando a última sincronização…</div> : !run ? <div className="mt-6 border-t border-[#e5ebf4] pt-5"><p className="text-[13px] font-semibold">Nenhuma sincronização registrada</p><p className="mt-1 text-[13px] leading-5 text-[#60758b]">Use “Sincronizar agora” para iniciar a primeira coleta.</p></div> : <div className="mt-6 border-t border-[#e5ebf4] pt-5" aria-live="polite">
         <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-[13px] font-bold">Última sincronização</p><p className="mt-0.5 text-xs text-[#60758b]">Iniciada em {formatImportTime(run.startedAt)}{run.completedAt ? ` · finalizada em ${formatImportTime(run.completedAt)}` : ""}</p></div><span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${run.status === "completed" ? "bg-[#eaf2fc] text-[#205b9e]" : run.status === "failed" ? "bg-[#fff3ef] text-[#a94b37]" : "bg-[#fff8e8] text-[#795c2f]"}`}>{run.status === "running" ? <LoaderCircle size={14} className="animate-spin"/> : run.status === "completed" ? <CheckCircle2 size={14}/> : <CircleAlert size={14}/>} {statusLabel}</span></div>
-        <div className="mt-5 flex flex-wrap items-baseline justify-between gap-2 text-[13px]"><span className="font-semibold text-[#29435e]">{syncPhaseLabels[run.phase] ?? "Processando dados"}</span><span className="tabular-nums text-[#60758b]">{fmtNumber(run.processed)}{run.total > 0 ? ` de ${fmtNumber(run.total)}` : ""} registros</span></div>
+        <div className="mt-5 flex flex-wrap items-baseline justify-between gap-2 text-[13px]"><span className="font-semibold text-[#29435e]">{syncPhaseLabels[run.phase] ?? "Processando dados"}{monthLabel}</span><span className="tabular-nums text-[#60758b]">{fmtNumber(run.processed)}{run.total > 0 ? ` de ${fmtNumber(run.total)}` : ""} registros</span></div>
         {run.status === "running" && <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#e8eef7]" role="progressbar" aria-label="Andamento da sincronização" aria-valuenow={progress ?? undefined} aria-valuemin={0} aria-valuemax={100}><div className="h-full rounded-full bg-[#2f6fc2] transition-[width]" style={{ width: `${progress ?? 8}%` }}/></div>}
         {run.errorMessage && <p role="alert" className="mt-4 rounded-lg bg-[#fff3ef] px-3.5 py-3 text-[13px] leading-5 text-[#a94b37]">{run.errorMessage}</p>}
         {Object.keys(run.metrics ?? {}).length > 0 && <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-[#e5ebf4] pt-4 sm:grid-cols-3">{Object.entries(run.metrics).filter(([, value]) => typeof value === "number").map(([key, value]) => <div key={key}><dt className="text-[11px] text-[#60758b]">{importMetricLabels[key] ?? key.replace(/([A-Z])/g, " $1")}</dt><dd className="mt-0.5 text-[15px] font-bold tabular-nums">{fmtNumber(value)}</dd></div>)}</dl>}
