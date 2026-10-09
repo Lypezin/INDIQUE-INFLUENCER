@@ -1,2 +1,7 @@
 [functions.indique-ganhe-access]
 verify_jwt = false
+
+# Cron calls use x-cron-secret; manual calls validate the Supabase user and
+# account_members admin role inside the function.
+[functions.indique-ganhe-datacrazy-sync]
+verify_jwt = false

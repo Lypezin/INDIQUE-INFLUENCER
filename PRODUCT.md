@@ -8,7 +8,7 @@ web
 
 ## Users
 
-Influenciadores que indicam entregadores acompanham suas próprias indicações, sobretudo pelo celular. Um administrador importa planilhas, revisa atribuições e gerencia os acessos.
+Influenciadores que indicam entregadores acompanham suas próprias indicações, sobretudo pelo celular. Um administrador sincroniza a Data Crazy, importa a Performance, revisa atribuições e gerencia os acessos.
 
 ## Product Purpose
 
@@ -16,7 +16,7 @@ Mostrar as corridas acumuladas por entregador, o avanço até a meta e os prêmi
 
 ## Operating Context
 
-Os dados são atualizados por importações administrativas de Data Crazy e Performance. O Data Crazy substitui a lista atual; a Performance soma ao histórico. O vínculo entre arquivos é o UUID.
+Os indicados são sincronizados pela API da Data Crazy manualmente ou todos os dias às 06:00 de Brasília. Uma coleta completa substitui a lista atual; a importação de Performance por CSV ou Excel soma ao histórico. O vínculo é o ID do Entregador do Data Crazy com o UUID da Performance.
 
 ## Capabilities and Constraints
 
@@ -35,6 +35,6 @@ Os dados são atualizados por importações administrativas de Data Crazy e Perf
 ## Product Principles
 
 - Mostrar primeiro o progresso dos indicados no celular.
-- Deixar claro quando os dados foram atualizados por importação.
+- Deixar claro quando os dados foram atualizados por sincronização ou importação.
 - Manter metas, corridas restantes e prêmios fáceis de consultar.
 - Proteger o acesso individual sem depender de mudanças globais no projeto compartilhado.

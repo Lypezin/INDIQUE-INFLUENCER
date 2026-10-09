@@ -112,6 +112,7 @@ button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
 :focus-visible { outline: 3px solid #2b6cbb; outline-offset: 3px; }
 ::selection { background: #b9d7fa; color: #102e57; }
+.account-avatar[aria-current="page"] { box-shadow: 0 0 0 2px #2b6cbb, 0 0 0 5px #eaf1fb; }
 
 .brand-lockup { display: flex; align-items: center; gap: .8rem; }
 .brand-mark { position: relative; width: 2.65rem; height: 2.65rem; flex: none; border-radius: .65rem; background: #174f98; }
@@ -195,6 +196,8 @@ html[data-theme="dark"] .portal-shell [class~="text-[#9a5c45]"] { color: var(--d
 html[data-theme="dark"] .portal-shell .brand-name { color: var(--dark-ink); }
 html[data-theme="dark"] .portal-shell .brand-name span { color: var(--dark-accent); }
 html[data-theme="dark"] .portal-shell .brand-description { color: var(--dark-muted); }
+html[data-theme="dark"] .account-avatar[aria-current="page"] { box-shadow: 0 0 0 2px var(--dark-accent), 0 0 0 5px var(--dark-card); }
+html[data-theme="dark"] ::selection { background: #123f78; color: #ffffff; }
 
 html[data-theme="dark"] .login-page { background: var(--dark-canvas); }
 html[data-theme="dark"] .login-form-card { background: var(--dark-card); border-color: var(--dark-border); }

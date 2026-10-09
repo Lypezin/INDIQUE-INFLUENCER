@@ -35,6 +35,22 @@ export async function callAccessApi<T>(payload: Record<string, unknown>): Promis
   return data as T;
 }
 
+export async function callDataCrazySync<T>(payload: { action: "start" | "status"; runId?: string }): Promise<T> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("O acesso ao Supabase ainda não foi configurado neste Site.");
+  const { data, error } = await supabase.functions.invoke("indique-ganhe-datacrazy-sync", { body: payload });
+  if (error) {
+    let message = error.message;
+    try {
+      const context = error.context as Response | undefined;
+      const detail: unknown = context && typeof context.json === "function" ? await context.json() : null;
+      if (detail && typeof detail === "object" && "error" in detail && typeof detail.error === "string") message = detail.error;
+    } catch { /* Keep the transport error when the function returns no JSON. */ }
+    throw new Error(message);
+  }
+  return data as T;
+}
+
 export async function callAdminApi<T>(
   action: string,
   payload: Record<string, unknown>,
