@@ -512,7 +512,7 @@ function DataCrazySyncPanel({ refresh }: { refresh: () => Promise<void> }) {
         <div className="mt-5 flex flex-wrap items-baseline justify-between gap-2 text-[13px]"><span className="font-semibold text-[#29435e]">{syncPhaseLabels[run.phase] ?? "Processando dados"}{monthLabel}</span><span className="tabular-nums text-[#60758b]">{fmtNumber(run.processed)}{run.total > 0 ? ` de ${fmtNumber(run.total)}` : ""} registros</span></div>
         {run.status === "running" && <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#e8eef7]" role="progressbar" aria-label="Andamento da sincronização" aria-valuenow={progress ?? undefined} aria-valuemin={0} aria-valuemax={100}><div className="h-full rounded-full bg-[#2f6fc2] transition-[width]" style={{ width: `${progress ?? 8}%` }}/></div>}
         {run.errorMessage && <p role="alert" className="mt-4 rounded-lg bg-[#fff3ef] px-3.5 py-3 text-[13px] leading-5 text-[#a94b37]">{run.errorMessage}</p>}
-        {Object.keys(run.metrics ?? {}).length > 0 && <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-[#e5ebf4] pt-4 sm:grid-cols-3">{Object.entries(run.metrics).filter(([, value]) => typeof value === "number").map(([key, value]) => <div key={key}><dt className="text-[11px] text-[#60758b]">{importMetricLabels[key] ?? key.replace(/([A-Z])/g, " $1")}</dt><dd className="mt-0.5 text-[15px] font-bold tabular-nums">{fmtNumber(value)}</dd></div>)}</dl>}
+        {Object.keys(run.metrics ?? {}).length > 0 && <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-[#e5ebf4] pt-4 sm:grid-cols-3">{Object.entries(run.metrics).filter(([key, value]) => typeof value === "number" && !(key === "businessesReceived" && typeof run.metrics.businesses === "number") && !(key === "leadsReceived" && typeof run.metrics.leads === "number")).map(([key, value]) => <div key={key}><dt className="text-[11px] text-[#60758b]">{importMetricLabels[key] ?? key.replace(/([A-Z])/g, " $1")}</dt><dd className="mt-0.5 text-[15px] font-bold tabular-nums">{fmtNumber(value)}</dd></div>)}</dl>}
       </div>}
     </section>
     <section className="self-start rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><h3 className="text-[14px] font-bold">Como funciona</h3><ol className="mt-4 space-y-4 text-[13px] leading-5 text-[#60758b]"><li><strong className="text-[#29435e]">1. Atribuição.</strong> A pipeline de cada negócio define o influenciador.</li><li><strong className="text-[#29435e]">2. Vínculo.</strong> O campo “ID do Entregador” conecta os dados às corridas da Performance.</li><li><strong className="text-[#29435e]">3. Publicação.</strong> A lista anterior permanece disponível até a coleta completa ser validada e publicada.</li></ol><p className="mt-5 border-t border-[#e5ebf4] pt-4 text-xs leading-5 text-[#60758b]">A sincronização automática está programada para as 06:00, horário de Brasília. As corridas acumuladas permanecem no histórico.</p></section>
@@ -607,6 +607,8 @@ const importMetricLabels: Record<string, string> = {
   invalidCpf: "CPF omitido", duplicateUuids: "UUID duplicado", invalidRoutes: "Corridas inválidas",
   sourceRows: "Linhas lidas", repeatedRows: "Linhas somadas", totalRoutes: "Corridas na carga",
   businessesReceived: "Negócios consultados", leadsReceived: "Leads consultados",
+  businesses: "Negócios consultados", leads: "Leads consultados",
+  referrals: "Indicados publicados", invalid_uuid: "Sem UUID válido",
 };
 
 const importActorLabel = (entry: { actor_display_name?: string | null; actor_email: string | null }) =>
