@@ -40,6 +40,21 @@
   --sidebar-accent-foreground: #205b9e;
   --sidebar-border: #dfe6f0;
   --sidebar-ring: #2b6cbb;
+  --dark-canvas: #0c1420;
+  --dark-card: #141e2b;
+  --dark-surface: #1a2737;
+  --dark-border: #2b3a4d;
+  --dark-ink: #dce6f2;
+  --dark-muted: #a9bbce;
+  --dark-muted-ink: #c3d1e0;
+  --dark-primary: #185aa9;
+  --dark-accent: #91bcf2;
+  --dark-success: #8edbb5;
+  --dark-danger: #f2a89b;
+  --dark-input: #34455a;
+  --dark-input-focus: #1c3e65;
+  --dark-accent-surface: #1a2c40;
+  --dark-danger-surface: #38231f;
 }
 
 @theme inline {
@@ -136,3 +151,72 @@ button:disabled { cursor: not-allowed; }
 @media (min-width: 640px) { .login-form-card { padding: 2.25rem; }.referral-heading { padding: 1.4rem 1.5rem; }.referral-controls { grid-template-columns: minmax(12rem,1fr) auto; }.summary-grid { gap: .85rem; } }
 @media (min-width: 1024px) { .login-page { grid-template-columns: minmax(0,1.05fr) minmax(0,.95fr); }.login-context { min-height: 100svh; display: flex; flex-direction: column; padding: 3rem clamp(2.5rem,5vw,5rem); background: #123f78; }.login-mobile-brand { display: none; }.login-form-card { border: 0; box-shadow: 0 24px 54px -36px #294865; }.referral-heading { flex-direction: row; align-items: center; justify-content: space-between; }.summary-grid { grid-template-columns: repeat(4, minmax(0,1fr)); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --background: var(--dark-canvas);
+  --foreground: var(--dark-ink);
+  --card: var(--dark-card);
+  --card-foreground: var(--dark-ink);
+  --border: var(--dark-border);
+  --input: var(--dark-input);
+  --muted: var(--dark-surface);
+  --muted-foreground: var(--dark-muted);
+  --sidebar: var(--dark-card);
+  --sidebar-foreground: var(--dark-ink);
+  background: var(--dark-canvas);
+}
+
+html[data-theme="dark"] body { background: var(--dark-canvas); color: var(--dark-ink); }
+html[data-theme="dark"] .portal-shell { background: var(--dark-canvas) !important; color: var(--dark-ink) !important; }
+html[data-theme="dark"] .portal-shell [class*="bg-[#"] { background-color: var(--dark-surface) !important; }
+html[data-theme="dark"] .portal-shell [class*="bg-white"] { background-color: var(--dark-card) !important; }
+html[data-theme="dark"] .portal-shell [class~="bg-[#f6f8fc]"] { background-color: var(--dark-canvas) !important; }
+html[data-theme="dark"] .portal-shell [class~="bg-[#185aa9]"],
+html[data-theme="dark"] .portal-shell [class~="bg-[#2f6fc2]"],
+html[data-theme="dark"] .portal-shell [class~="bg-[#114886]"] { background-color: var(--dark-primary) !important; }
+html[data-theme="dark"] .portal-shell header,
+html[data-theme="dark"] .portal-shell aside { border-color: var(--dark-border) !important; }
+html[data-theme="dark"] .portal-shell [class*="border-[#"] { border-color: var(--dark-border) !important; }
+html[data-theme="dark"] .portal-shell [class*="divide-"] > :not([hidden]) ~ :not([hidden]) { border-color: var(--dark-border) !important; }
+html[data-theme="dark"] .portal-shell [class*="text-[#"] { color: var(--dark-muted-ink) !important; }
+html[data-theme="dark"] .portal-shell [class~="text-[#205b9e]"],
+html[data-theme="dark"] .portal-shell [class~="text-[#245b9b]"],
+html[data-theme="dark"] .portal-shell [class~="text-[#245ca6]"],
+html[data-theme="dark"] .portal-shell [class~="text-[#1f61af]"],
+html[data-theme="dark"] .portal-shell [class~="text-[#2b5d9c]"] { color: var(--dark-accent) !important; }
+html[data-theme="dark"] .portal-shell [class~="text-[#267353]"],
+html[data-theme="dark"] .portal-shell [class~="text-[#2c7558]"],
+html[data-theme="dark"] .portal-shell [class~="text-[#277957]"],
+html[data-theme="dark"] .portal-shell [class~="text-[#266a55]"] { color: var(--dark-success) !important; }
+html[data-theme="dark"] .portal-shell [class~="text-[#a94b37]"],
+html[data-theme="dark"] .portal-shell [class~="text-[#a84a36]"],
+html[data-theme="dark"] .portal-shell [class~="text-[#9a5c45]"] { color: var(--dark-danger) !important; }
+html[data-theme="dark"] .portal-shell .brand-name { color: var(--dark-ink); }
+html[data-theme="dark"] .portal-shell .brand-name span { color: var(--dark-accent); }
+html[data-theme="dark"] .portal-shell .brand-description { color: var(--dark-muted); }
+
+html[data-theme="dark"] .login-page { background: var(--dark-canvas); }
+html[data-theme="dark"] .login-form-card { background: var(--dark-card); border-color: var(--dark-border); }
+html[data-theme="dark"] .login-form-card h2 { color: var(--dark-ink); }
+html[data-theme="dark"] .login-intro,
+html[data-theme="dark"] .login-form label { color: var(--dark-muted-ink); }
+html[data-theme="dark"] .login-form input { background: var(--dark-canvas); border-color: var(--dark-input); color: var(--dark-ink); }
+html[data-theme="dark"] .login-form input::placeholder { color: var(--dark-muted); }
+html[data-theme="dark"] .login-form input:focus { box-shadow: 0 0 0 3px var(--dark-input-focus); }
+html[data-theme="dark"] .login-links { color: var(--dark-accent); }
+html[data-theme="dark"] .form-error { background: var(--dark-danger-surface); color: var(--dark-danger); }
+html[data-theme="dark"] .form-notice { background: var(--dark-accent-surface); color: var(--dark-accent); }
+html[data-theme="dark"] .dashboard-heading h1,
+html[data-theme="dark"] .referral-heading h2 { color: var(--dark-ink); }
+html[data-theme="dark"] .dashboard-heading p,
+html[data-theme="dark"] .dashboard-heading span,
+html[data-theme="dark"] .referral-heading p,
+html[data-theme="dark"] .referral-footer { color: var(--dark-muted); }
+html[data-theme="dark"] .referral-section { background: var(--dark-card); border-color: var(--dark-border); }
+html[data-theme="dark"] .referral-heading,
+html[data-theme="dark"] .referral-footer { border-color: var(--dark-border); }
+html[data-theme="dark"] .filter-action { background: var(--dark-surface); border-color: var(--dark-input); color: var(--dark-accent); }
+html[data-theme="dark"] .filter-action[aria-pressed="true"] { background: var(--dark-input-focus); border-color: var(--ring); }
+html[data-theme="dark"] .load-more { color: var(--dark-accent); border-color: var(--dark-border); }
+html[data-theme="dark"] .load-more:hover { background: var(--dark-surface); }

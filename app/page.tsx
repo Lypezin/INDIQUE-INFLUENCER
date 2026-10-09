@@ -5,12 +5,12 @@ import type { Session } from "@supabase/supabase-js";
 import {
   ArrowDownUp, ArrowRight, Award, BarChart3, Check, CheckCircle2, ChevronDown,
   CircleAlert, ClipboardList, CloudUpload, Download, Eye, EyeOff, FileSpreadsheet,
-  Gift, History, LoaderCircle, LogOut, Mail, MapPin, Menu, Search, ShieldCheck, Users, XCircle,
+  CalendarDays, Gift, History, LoaderCircle, LogOut, Mail, MapPin, Menu, Moon, Search, ShieldCheck, Sun, UserRound, Users, XCircle,
 } from "lucide-react";
 import { callAccessApi, callAdminApi, DATA_SCHEMA, getSupabase } from "@/lib/supabase";
 import {
   parseDataCrazy, parsePerformance, type ImportPreview, type PerformanceImportRow,
-  type ReferralImportRow,
+  repairTextEncoding, type ReferralImportRow,
 } from "@/lib/importers";
 
 type Role = "admin" | "influencer";
@@ -21,6 +21,7 @@ type Referral = {
   uuid: string;
   name: string;
   region: string | null;
+  released_at: string | null;
   phone: string | null;
   cpf: string | null;
   routes: number;
@@ -45,12 +46,21 @@ type Review = { id: string; uuid: string; name: string; region: string | null; r
 type Member = { user_id: string; email: string; role: Role; display_name: string | null; influencer_id: string | null; influencer_name: string | null };
 type PendingInvite = { id: string; email: string; role: Role; influencer_name: string | null; created_at: string };
 type AdminOverview = { influencers: Influencer[]; availableInfluencers: Influencer[]; imports: ImportSummary[]; reviews: Review[]; reviewCount: number; members: Member[]; invites: PendingInvite[]; referralCount: number; contributionTotal: number };
-type AdminReferral = { uuid: string; name: string; region: string | null; phone: string | null; cpf: string | null; influencer_id: string; influencer_name: string; routes: number; route_goal: number; prize_cents: number; prize_unlocked: boolean; routes_remaining: number };
+type AdminReferral = { uuid: string; name: string; region: string | null; released_at: string | null; phone: string | null; cpf: string | null; influencer_id: string; influencer_name: string; routes: number; route_goal: number; prize_cents: number; prize_unlocked: boolean; routes_remaining: number };
 type AdminReferralsResult = { items: AdminReferral[]; total: number; totalRoutes: number; unlockedCount: number; unlockedPrizeCents: number };
-type TabId = "dashboard" | "referrals" | "data-crazy" | "performance" | "reviews" | "accounts" | "imports";
+type TabId = "dashboard" | "referrals" | "data-crazy" | "performance" | "reviews" | "accounts" | "profile" | "imports";
+type Theme = "light" | "dark";
 
 const fmtMoney = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
 const fmtNumber = (number: number) => new Intl.NumberFormat("pt-BR").format(number);
+const fmtDate = (value: string | null) => {
+  if (!value) return "Não informada";
+  const dateOnly = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const date = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(value);
+  return Number.isNaN(date.getTime()) ? "Não informada" : date.toLocaleDateString("pt-BR");
+};
 const subscribeRecovery = (callback: () => void) => {
   window.addEventListener("hashchange", callback);
   window.addEventListener("popstate", callback);
@@ -65,6 +75,7 @@ const adminTabs: { id: TabId; label: string; icon: typeof BarChart3 }[] = [
   { id: "performance", label: "Performance", icon: ArrowDownUp },
   { id: "reviews", label: "Revisões", icon: ClipboardList },
   { id: "accounts", label: "Acessos", icon: Users },
+  { id: "profile", label: "Meu perfil", icon: UserRound },
   { id: "imports", label: "Importações", icon: History },
 ];
 
@@ -88,9 +99,22 @@ export default function Home() {
   const recoveryMode = useSyncExternalStore(subscribeRecovery, getRecoverySnapshot, getRecoveryServerSnapshot);
   const [loadError, setLoadError] = useState("");
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
+  const [theme, setTheme] = useState<Theme>("light");
   const [mobileMenu, setMobileMenu] = useState(false);
   const [search, setSearch] = useState("");
   const [onlyUnlocked, setOnlyUnlocked] = useState(false);
+
+  useEffect(() => {
+    try { if (window.localStorage.getItem("indique-ganhe:theme") === "dark") setTheme("dark"); }
+    catch { /* Theme preference is optional when browser storage is unavailable. */ }
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    try { window.localStorage.setItem("indique-ganhe:theme", theme); }
+    catch { /* The current theme still works when browser storage is unavailable. */ }
+  }, [theme]);
 
   const selectTab = useCallback((tab: TabId) => {
     setActiveTab(tab);
@@ -123,11 +147,15 @@ export default function Home() {
             const all: Referral[] = [];
             for (let offset = 0; ; offset += 500) {
               const { data, error } = await supabase!.schema(DATA_SCHEMA).from("referral_progress")
-                .select("referral_id,uuid,name,region,phone,cpf,routes,route_goal,prize_cents,prize_unlocked,routes_remaining,influencer_name")
+                .select("referral_id,uuid,name,region,released_at,phone,cpf,routes,route_goal,prize_cents,prize_unlocked,routes_remaining,influencer_name")
                 .order("prize_unlocked", { ascending: false }).order("routes", { ascending: false }).order("uuid")
                 .range(offset, offset + 499);
               if (error) throw error;
-              all.push(...((data ?? []) as Referral[]));
+              all.push(...((data ?? []) as Referral[]).map((item) => ({
+                ...item,
+                name: repairTextEncoding(item.name),
+                region: item.region ? repairTextEncoding(item.region) : null,
+              })));
               if (!data || data.length < 500) break;
             }
             return all;
@@ -190,9 +218,9 @@ export default function Home() {
   const subtitle = isAdmin ? "Indicados, planilhas, revisões e acessos" : "Corridas e prêmios por entregador";
 
   return (
-    <main className="min-h-screen bg-[#f6f8fc] text-[#172a40]">
+    <main className="portal-shell min-h-screen bg-[#f6f8fc] text-[#172a40]">
       <div className="mx-auto flex min-h-screen max-w-[1600px]">
-        <aside className="hidden w-[250px] shrink-0 flex-col border-r border-[#dfe6f0] bg-white px-5 py-7 lg:flex">
+        <aside className="sticky top-0 hidden h-screen w-[250px] shrink-0 self-start flex-col overflow-y-auto border-r border-[#dfe6f0] bg-white px-5 py-7 lg:flex">
           <Brand />
           <div className="mt-12 text-xs font-bold uppercase tracking-[.18em] text-[#63788e]">Menu</div>
           <nav className="mt-3 space-y-1.5">
@@ -214,6 +242,7 @@ export default function Home() {
             <div className="flex items-center gap-3">
               <div className="hidden text-right sm:block"><div className="text-xs font-semibold">{isAdmin ? profile.display_name || "Administrador" : influencer?.name}</div><div className="mt-0.5 max-w-44 truncate text-[13px] text-[#87979a]">{profile.email}</div></div>
               <div className="flex size-10 items-center justify-center rounded-full bg-[#eaf1fa] text-sm font-bold text-[#1f61af]">{(isAdmin ? profile.display_name?.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join("") || "AD" : influencer?.name?.slice(0, 2) ?? "IG").toUpperCase()}</div>
+              <button onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")} className="flex size-11 items-center justify-center rounded-lg text-[#60758b] hover:bg-[#f0f4f9]" title={`Ativar modo ${theme === "dark" ? "claro" : "escuro"}`} aria-label={`Ativar modo ${theme === "dark" ? "claro" : "escuro"}`}>{theme === "dark" ? <Sun size={19}/> : <Moon size={19}/>}</button>
               <button onClick={() => void supabase.auth.signOut()} className="flex size-11 items-center justify-center rounded-lg text-[#60758b] hover:bg-[#f0f4f9]" title="Sair" aria-label="Sair"><LogOut size={19} /></button>
             </div>
           </header>
@@ -222,7 +251,7 @@ export default function Home() {
           <div className="mx-auto max-w-[1320px] px-4 pb-12 pt-7 sm:px-8 sm:pt-9 lg:px-10">
             {loadError && <div className="mb-5 flex items-start gap-3 rounded-xl border border-[#f2d8bd] bg-[#fffaf4] p-4 text-sm text-[#84572f]"><CircleAlert size={18} className="mt-0.5 shrink-0" />{loadError}</div>}
             {!isAdmin ? <InfluencerDashboard referrals={referrals} influencer={influencer} lastImportAt={lastImportAt} search={search} setSearch={setSearch} onlyUnlocked={onlyUnlocked} setOnlyUnlocked={setOnlyUnlocked} /> : (
-              <AdminDashboard activeTab={activeTab} overview={overview} refresh={refreshAdmin} onTab={selectTab} onAdminNameSaved={updateProfileDisplayName} />
+              <AdminDashboard activeTab={activeTab} overview={overview} profile={profile} refresh={refreshAdmin} onTab={selectTab} onAdminNameSaved={updateProfileDisplayName} />
             )}
           </div>
         </section>
@@ -232,7 +261,7 @@ export default function Home() {
 }
 
 function Brand() {
-  return <div className="brand-lockup"><div className="brand-mark" aria-hidden="true"><span className="brand-mark-line"/><span className="brand-mark-dot"/></div><div><div className="brand-name">Indique <span>e Ganhe</span></div><div className="brand-description">Indicações e recompensas</div></div></div>;
+  return <div className="brand-lockup"><img src="/entrego-mark.png" className="size-[2.65rem] shrink-0" alt="Entrego"/><div><div className="brand-name">Indique <span>e Ganhe</span></div><div className="brand-description">Indicações e recompensas</div></div></div>;
 }
 
 function NavButton({ tab, active, onClick }: { tab: { id: TabId; label: string; icon: typeof BarChart3 }; active: boolean; onClick: () => void }) {
@@ -372,7 +401,7 @@ function ReferralRow({ referral }: { referral: Referral }) {
   const [expanded, setExpanded] = useState(false);
   const progress = referral.route_goal > 0 ? Math.min(100, Math.round(referral.routes / referral.route_goal * 100)) : 0;
   return <div className="px-4 py-4 sm:px-6"><button onClick={() => setExpanded(!expanded)} aria-expanded={expanded} className="grid min-h-14 w-full gap-4 text-left md:grid-cols-[minmax(180px,1.05fr)_minmax(190px,1.4fr)_145px_24px] md:items-center">
-    <div className="flex min-w-0 items-center gap-3"><div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#eaf1fa] text-xs font-bold text-[#2b5d9c]">{(referral.name || "EN").split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</div><div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-[#223950]">{referral.name || "Nome indisponível"}</div><div className="mt-1 flex items-center gap-1 text-xs text-[#657b90]"><MapPin size={13}/>{referral.region || "Região não informada"}</div></div><ChevronDown size={18} className={`shrink-0 text-[#5e7894] transition md:hidden ${expanded ? "rotate-180" : ""}`} /></div>
+    <div className="flex min-w-0 items-center gap-3"><div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#eaf1fa] text-xs font-bold text-[#2b5d9c]">{(referral.name || "EN").split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</div><div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-[#223950]">{referral.name || "Nome indisponível"}</div><div className="mt-1 flex items-center gap-1 text-xs text-[#657b90]"><MapPin size={13}/>{referral.region || "Região não informada"}</div><div className="mt-1 flex items-center gap-1 text-xs text-[#74889b]"><CalendarDays size={13}/>Liberação: {fmtDate(referral.released_at)}</div></div><ChevronDown size={18} className={`shrink-0 text-[#5e7894] transition md:hidden ${expanded ? "rotate-180" : ""}`} /></div>
     <div><div className="mb-2 flex items-center justify-between text-xs"><span className="font-semibold text-[#294866]">{fmtNumber(referral.routes)} <span className="font-normal text-[#64798d]">de {fmtNumber(referral.route_goal)} corridas</span></span><span className="font-semibold text-[#245ca6]">{progress}%</span></div><div className="h-2 overflow-hidden rounded-full bg-[#e8eef7]"><div className="h-full rounded-full bg-[#2f6fc2] transition-all" style={{ width: `${progress}%` }}/></div></div>
     <div className="flex items-center justify-between gap-2 md:block md:text-right">{referral.prize_unlocked ? <span className="inline-flex items-center gap-1.5 rounded-full bg-[#eaf2fc] px-2.5 py-1.5 text-xs font-bold text-[#205b9e]"><CheckCircle2 size={12}/>Prêmio liberado</span> : <><span className="block text-[13px] font-semibold text-[#415b60]">Faltam {fmtNumber(referral.routes_remaining)}</span><span className="mt-0.5 block text-xs text-[#697f94]">para {fmtMoney(referral.prize_cents)}</span></>}</div><ChevronDown size={16} className={`hidden text-[#9aaaa8] transition md:block ${expanded ? "rotate-180" : ""}`} />
   </button>{expanded && <div className="mt-4 grid gap-3 rounded-xl bg-[#f7faff] p-3.5 text-[13px] sm:grid-cols-3"><Detail label="Telefone" value={referral.phone || "Indisponível"}/><Detail label="CPF" value={referral.cpf ? `${referral.cpf.slice(0, 3)}.${referral.cpf.slice(3, 6)}.${referral.cpf.slice(6, 9)}-${referral.cpf.slice(9)}` : "Não informado"}/><Detail label="UUID" value={referral.uuid}/></div>}</div>;
@@ -382,7 +411,7 @@ function Detail({ label, value }: { label: string; value: string }) { return <di
 
 function EmptyState({ title, detail }: { title: string; detail: string }) { return <div className="grid min-h-56 place-items-center px-5 py-10 text-center"><div className="max-w-sm"><div className="mx-auto flex size-11 items-center justify-center rounded-[14px] bg-[#eaf1fa] text-[#245b9b]"><Users size={19}/></div><h3 className="mt-4 text-[14px] font-bold">{title}</h3><p className="mt-1.5 text-xs leading-5 text-[#60758b]">{detail}</p></div></div>; }
 
-function AdminDashboard({ activeTab, overview, refresh, onTab, onAdminNameSaved }: { activeTab: TabId; overview: AdminOverview | null; refresh: () => Promise<void>; onTab: (tab: TabId) => void; onAdminNameSaved: (userId: string, displayName: string | null) => void }) {
+function AdminDashboard({ activeTab, overview, profile, refresh, onTab, onAdminNameSaved }: { activeTab: TabId; overview: AdminOverview | null; profile: Profile; refresh: () => Promise<void>; onTab: (tab: TabId) => void; onAdminNameSaved: (userId: string, displayName: string | null) => void }) {
   if (!overview) return <div className="grid min-h-64 place-items-center text-sm text-[#60758b]"><LoaderCircle className="mr-2 animate-spin" size={18}/>Carregando área administrativa…</div>;
   return <div>
     <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h1 className="mt-2 text-[29px] font-semibold tracking-[-.045em] sm:text-[34px]">{adminTabs.find((tab) => tab.id === activeTab)?.label}</h1><p className="mt-1.5 text-[13px] text-[#60758b]">Importe planilhas, revise UUIDs sem responsável e libere contas.</p></div><button onClick={() => void refresh()} className="h-11 w-fit rounded-lg border border-[#d4deeb] bg-white px-3.5 text-[13px] font-semibold text-[#536d70] hover:bg-[#f7faff]">Atualizar dados</button></div>
@@ -392,15 +421,14 @@ function AdminDashboard({ activeTab, overview, refresh, onTab, onAdminNameSaved 
     {activeTab === "performance" && <ImportPanel kind="performance" title="Performance" subtitle="Adiciona as corridas desta importação ao acumulado existente." overview={overview} refresh={refresh}/>}
     {activeTab === "reviews" && <ReviewsPanel overview={overview} refresh={refresh}/>}
     {activeTab === "accounts" && <AccountsPanel overview={overview} refresh={refresh} onAdminNameSaved={onAdminNameSaved}/>}
+    {activeTab === "profile" && <ProfileSettingsPanel profile={profile} onAdminNameSaved={onAdminNameSaved}/>}
     {activeTab === "imports" && <ImportHistoryPanel/>}
   </div>;
 }
 
 function AdminHome({ overview, onTab }: { overview: AdminOverview; onTab: (tab: TabId) => void }) {
-  const latest = overview.imports[0];
   return <><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Entregadores ativos" value={fmtNumber(overview.referralCount)} icon={<Users size={17}/>} sub="na lista atual do Data Crazy" color="teal"/><StatCard label="Corridas acumuladas" value={fmtNumber(overview.contributionTotal)} icon={<BarChart3 size={17}/>} sub="soma do histórico importado" color="blue"/><StatCard label="Atribuições em revisão" value={fmtNumber(overview.reviewCount ?? overview.reviews.length)} icon={<ClipboardList size={17}/>} sub="UUIDs aguardando responsável" color="gold"/><StatCard label="Contas vinculadas" value={fmtNumber(overview.members.length)} icon={<ShieldCheck size={17}/>} sub="administração e influenciadores" color="plum"/></div>
-    <div className="mt-7 grid gap-4 xl:grid-cols-[1.15fr_.85fr]"><section className="rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><div className="flex items-start justify-between"><div><h2 className="text-[15px] font-bold">Próximas ações</h2><p className="mt-1 text-[13px] text-[#63788e]">Importe novas bases ou resolva atribuições pendentes.</p></div></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><ActionCard icon={<Users size={17}/>} title="Consultar indicados" text="Acompanhe a base completa por influenciador." onClick={() => onTab("referrals")}/><ActionCard icon={<CloudUpload size={17}/>} title="Atualizar indicados" text="Troque a lista atual com o novo arquivo Data Crazy." onClick={() => onTab("data-crazy")}/><ActionCard icon={<ArrowDownUp size={17}/>} title="Somar performance" text="Acrescente novas corridas ao acumulado da campanha." onClick={() => onTab("performance")}/><ActionCard icon={<ClipboardList size={17}/>} title={`Revisar atribuições · ${overview.reviewCount ?? overview.reviews.length}`} text="Resolva UUIDs sem um influenciador reconhecido." onClick={() => onTab("reviews")}/><ActionCard icon={<Users size={17}/>} title="Gerenciar acessos" text="Convide cada parceiro para sua própria conta." onClick={() => onTab("accounts")}/></div></section>
-      <section className="rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><div className="flex items-start justify-between gap-3"><div><h2 className="text-[15px] font-bold">Última importação</h2><p className="mt-1 text-[13px] text-[#63788e]">A carga mais recente entre todos os administradores.</p></div><button onClick={() => onTab("imports")} className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[12px] font-bold text-[#205b9e] hover:bg-[#f2f7fd] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc2]">Ver histórico<ArrowRight size={14}/></button></div>{latest ? <><div className="mt-6 inline-flex items-center gap-1.5 rounded-full bg-[#eaf2fc] px-2.5 py-1 text-xs font-bold text-[#277957]"><Check size={12}/>{latest.status === "completed" ? "Concluída" : latest.status}</div><div className="mt-3 truncate text-sm font-semibold text-[#29435e]">{latest.file_name}</div><div className="mt-1 text-[13px] text-[#60758b]">{latest.kind === "data_crazy" ? "Data Crazy" : "Performance"} · {new Date(latest.created_at).toLocaleString("pt-BR")}</div><div className="mt-4 border-t border-[#e6ebf2] pt-3 text-xs text-[#63788e]">{fmtNumber(latest.metrics?.total ?? 0)} registros na última carga</div></> : <p className="mt-7 rounded-xl bg-[#f7faff] px-4 py-5 text-xs leading-5 text-[#63788e]">Ainda não há importações. Os arquivos de exemplo foram usados apenas para validar o leitor; nenhum dado foi carregado.</p>}</section></div>
+    <section className="mt-7 rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><div><h2 className="text-[15px] font-bold">Próximas ações</h2><p className="mt-1 text-[13px] text-[#63788e]">Importe novas bases ou resolva atribuições pendentes.</p></div><div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3"><ActionCard icon={<Users size={17}/>} title="Consultar indicados" text="Acompanhe a base completa por influenciador." onClick={() => onTab("referrals")}/><ActionCard icon={<CloudUpload size={17}/>} title="Atualizar indicados" text="Troque a lista atual com o novo arquivo Data Crazy." onClick={() => onTab("data-crazy")}/><ActionCard icon={<ArrowDownUp size={17}/>} title="Somar performance" text="Acrescente novas corridas ao acumulado da campanha." onClick={() => onTab("performance")}/><ActionCard icon={<ClipboardList size={17}/>} title={`Revisar atribuições · ${overview.reviewCount ?? overview.reviews.length}`} text="Resolva UUIDs sem um influenciador reconhecido." onClick={() => onTab("reviews")}/><ActionCard icon={<Users size={17}/>} title="Gerenciar acessos" text="Convide cada parceiro para sua própria conta." onClick={() => onTab("accounts")}/></div></section>
     <section className="mt-4 rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><div className="flex items-center justify-between"><div><h2 className="text-[15px] font-bold">Regras de premiação</h2><p className="mt-1 text-[13px] text-[#63788e]">Um prêmio por entregador ao alcançar a meta.</p></div><Gift size={18} className="text-[#b3822e]"/></div><div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{overview.influencers.map((item) => <div key={item.id} className="flex items-center justify-between rounded-xl bg-[#f7faff] px-3.5 py-3"><span className="text-xs font-semibold">{item.name}</span><span className="text-xs font-semibold text-[#60758b]">{item.route_goal} corridas <span className="mx-1 text-[#c0c9c7">·</span><strong className="text-[#205b9e]">{fmtMoney(item.prize_cents)}</strong></span></div>)}</div></section>
   </>;
 }
@@ -739,6 +767,44 @@ function AdminNameEditor({ member, onSave }: { member: Member; onSave: (userId: 
   </div>;
 }
 
+function ProfileSettingsPanel({ profile, onAdminNameSaved }: { profile: Profile; onAdminNameSaved: (userId: string, displayName: string | null) => void }) {
+  const [value, setValue] = useState(profile.display_name ?? "");
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => setValue(profile.display_name ?? ""), [profile.display_name]);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true); setFeedback(""); setError("");
+    try {
+      const result = await callAdminApi<{ userId: string; displayName: string | null }>("account-name-set", {
+        userId: profile.user_id,
+        displayName: value.trim() || null,
+      });
+      setValue(result.displayName ?? "");
+      onAdminNameSaved(profile.user_id, result.displayName);
+      setFeedback(result.displayName ? "Seu nome foi atualizado." : "Seu nome foi removido.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível salvar seu nome.");
+    } finally { setBusy(false); }
+  }
+
+  return <section className="max-w-2xl rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6">
+    <div className="flex size-10 items-center justify-center rounded-xl bg-[#eaf1fa] text-[#205b9e]"><UserRound size={18}/></div>
+    <h2 className="mt-4 text-[15px] font-bold">Seu nome de exibição</h2>
+    <p className="mt-1 text-[13px] leading-5 text-[#63788e]">Este nome aparece no cabeçalho do portal e na lista de contas administrativas.</p>
+    <form onSubmit={submit} className="mt-5 max-w-lg space-y-3">
+      <label className="block text-xs font-bold text-[#405b75]">Nome<input value={value} onChange={(event) => setValue(event.target.value)} maxLength={80} className="mt-1.5 h-11 w-full rounded-lg border border-[#d4deeb] bg-white px-3 text-sm font-medium outline-none focus:border-[#2b6cbb]" placeholder="Como você quer ser identificado"/></label>
+      <div className="text-xs text-[#60758b]">E-mail da conta: <strong className="font-semibold">{profile.email}</strong></div>
+      {feedback && <p role="status" className="text-xs text-[#2c7558]">{feedback}</p>}
+      {error && <p role="alert" className="text-xs text-[#a94b37]">{error}</p>}
+      <button type="submit" disabled={busy || value.trim() === (profile.display_name ?? "")} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#185aa9] px-4 text-[13px] font-bold text-white hover:bg-[#114886] disabled:cursor-not-allowed disabled:opacity-55">{busy ? <LoaderCircle size={15} className="animate-spin"/> : <Check size={15}/>}Salvar meu nome</button>
+    </form>
+  </section>;
+}
+
 function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
   const pageSize = 50;
   const [filterId, setFilterId] = useState("all");
@@ -760,7 +826,14 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
           influencerId: filterId,
           search: search.trim(),
         });
-        if (!cancelled) setResult(pageResult);
+        if (!cancelled) setResult({
+          ...pageResult,
+          items: pageResult.items.map((item) => ({
+            ...item,
+            name: repairTextEncoding(item.name),
+            region: item.region ? repairTextEncoding(item.region) : null,
+          })),
+        });
       } catch (cause) {
         if (!cancelled) setError(cause instanceof Error ? cause.message : "Não foi possível carregar os indicados.");
       } finally {
@@ -795,9 +868,11 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
         <StatCard label="Prêmios liberados" value={fmtNumber(result?.unlockedCount ?? 0)} icon={<CheckCircle2 size={17}/>} sub="um por entregador ao atingir a meta" color="gold"/>
         <StatCard label="Valor dos prêmios" value={fmtMoney(result?.unlockedPrizeCents ?? 0)} icon={<Award size={17}/>} sub="total liberado, sem controle de pagamento" color="plum"/>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_240px]">
+      <div className="mt-4 space-y-3">
         <label className="relative block text-xs font-semibold text-[#63788e]"><span className="sr-only">Buscar indicado</span><Search size={16} className="pointer-events-none absolute left-3 top-[13px] text-[#8091a4]"/><input type="search" value={search} onChange={(event) => changeSearch(event.target.value)} placeholder="Buscar nome, UUID, telefone ou CPF" className="h-11 w-full rounded-lg border border-[#d4deeb] bg-white pl-9 pr-3 text-[13px] font-medium text-[#29435e] outline-none focus:border-[#2f6fc2] focus:ring-2 focus:ring-[#d7e8fa]" /></label>
-        <label className="flex flex-col gap-1 text-xs font-semibold text-[#63788e]">Influenciador<select value={filterId} onChange={(event) => changeFilter(event.target.value)} className="h-11 rounded-lg border border-[#d4deeb] bg-white px-3 text-[13px] font-medium text-[#29435e] outline-none focus:border-[#2f6fc2] focus:ring-2 focus:ring-[#d7e8fa]"><option value="all">Todos os influenciadores</option>{influencers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <div role="group" aria-label="Filtrar indicados por influenciador" className="flex flex-wrap gap-2">
+          {[{ id: "all", name: "Todos" }, ...influencers].map((item) => <button key={item.id} type="button" onClick={() => changeFilter(item.id)} aria-pressed={filterId === item.id} className={`min-h-10 rounded-full border px-3.5 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc2] ${filterId === item.id ? "border-[#185aa9] bg-[#185aa9] text-white" : "border-[#d4deeb] bg-white text-[#536d70] hover:bg-[#f7faff]"}`}>{item.name}</button>)}
+        </div>
       </div>
     </section>
 
@@ -809,6 +884,7 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
           return <article key={item.uuid} className="p-4">
             <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="break-words text-[13px] font-bold text-[#203b58]">{item.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-[#8191a2]">UUID · {item.uuid}</div></div><span className="shrink-0 rounded-full bg-[#eaf1fa] px-2.5 py-1 text-xs font-bold text-[#205b9e]">{item.influencer_name}</span></div>
             <div className="mt-3 text-xs text-[#405b76]">{item.region || "Região não informada"}</div>
+            <div className="mt-1 flex items-center gap-1 text-xs text-[#60758b]"><CalendarDays size={13}/>Liberação: {fmtDate(item.released_at)}</div>
             <div className="mt-1 break-words text-xs text-[#60758b]">Telefone · {item.phone || "indisponível"}<span className="px-1.5 text-[#bdc8d4]">·</span>CPF · {item.cpf || "indisponível"}</div>
             <div className="mt-3"><div className="flex items-center justify-between gap-3 text-xs"><span className="font-semibold tabular-nums text-[#29435e]">{fmtNumber(Number(item.routes))} / {fmtNumber(item.route_goal)} corridas</span><span className="font-bold tabular-nums text-[#205b9e]">{progress}%</span></div><div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e8eef7]"><div className="h-full rounded-full bg-[#2f6fc2]" style={{ width: `${progress}%` }}/></div></div>
             <div className="mt-3 flex items-center justify-between gap-2"><span className={`text-xs font-bold ${item.prize_unlocked ? "text-[#267353]" : "text-[#60758b]"}`}>{item.prize_unlocked ? "Prêmio liberado" : `Faltam ${fmtNumber(item.routes_remaining)} corridas`}</span><span className="text-xs font-bold text-[#29435e]">{fmtMoney(item.prize_cents)}</span></div>
@@ -821,7 +897,7 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
           <thead className="bg-[#f7faff] text-xs font-bold uppercase tracking-[.08em] text-[#71859b]"><tr><th className="px-4 py-3">Entregador</th><th className="px-4 py-3">Influenciador</th><th className="px-4 py-3">Contato</th><th className="px-4 py-3">Corridas e progresso</th><th className="px-4 py-3">Prêmio</th></tr></thead>
           <tbody className="divide-y divide-[#edf1f6]">{result.items.map((item) => {
             const progress = Math.min(100, Math.round(Number(item.routes) / item.route_goal * 100));
-            return <tr key={item.uuid} className="align-top hover:bg-[#fbfcfe]"><td className="max-w-[250px] px-4 py-3.5"><div className="text-[13px] font-semibold text-[#203b58]">{item.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-[#8191a2]">{item.uuid}</div><div className="mt-1 text-xs text-[#60758b]">{item.region || "Região não informada"}</div></td><td className="px-4 py-3.5 text-xs font-semibold text-[#405b76]">{item.influencer_name}</td><td className="px-4 py-3.5 text-xs leading-5 text-[#536c84]">{item.phone || "Telefone indisponível"}<div>{item.cpf ? `CPF ${item.cpf}` : "CPF indisponível"}</div></td><td className="w-[240px] px-4 py-3.5"><div className="flex justify-between gap-3 text-xs"><span className="font-semibold tabular-nums text-[#29435e]">{fmtNumber(Number(item.routes))} / {fmtNumber(item.route_goal)}</span><span className="font-bold tabular-nums text-[#205b9e]">{progress}%</span></div><div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e8eef7]"><div className="h-full rounded-full bg-[#2f6fc2]" style={{ width: `${progress}%` }}/></div><div className="mt-1 text-xs text-[#60758b]">{item.prize_unlocked ? "Meta atingida" : `Faltam ${fmtNumber(item.routes_remaining)} corridas`}</div></td><td className="px-4 py-3.5"><div className="text-xs font-bold text-[#29435e]">{fmtMoney(item.prize_cents)}</div><div className={`mt-1 text-xs font-semibold ${item.prize_unlocked ? "text-[#267353]" : "text-[#8191a2]"}`}>{item.prize_unlocked ? "Liberado" : "Em progresso"}</div></td></tr>;
+            return <tr key={item.uuid} className="align-top hover:bg-[#fbfcfe]"><td className="max-w-[250px] px-4 py-3.5"><div className="text-[13px] font-semibold text-[#203b58]">{item.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-[#8191a2]">{item.uuid}</div><div className="mt-1 text-xs text-[#60758b]">{item.region || "Região não informada"}</div><div className="mt-1 text-xs text-[#60758b]">Liberação: {fmtDate(item.released_at)}</div></td><td className="px-4 py-3.5 text-xs font-semibold text-[#405b76]">{item.influencer_name}</td><td className="px-4 py-3.5 text-xs leading-5 text-[#536c84]">{item.phone || "Telefone indisponível"}<div>{item.cpf ? `CPF ${item.cpf}` : "CPF indisponível"}</div></td><td className="w-[240px] px-4 py-3.5"><div className="flex justify-between gap-3 text-xs"><span className="font-semibold tabular-nums text-[#29435e]">{fmtNumber(Number(item.routes))} / {fmtNumber(item.route_goal)}</span><span className="font-bold tabular-nums text-[#205b9e]">{progress}%</span></div><div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e8eef7]"><div className="h-full rounded-full bg-[#2f6fc2]" style={{ width: `${progress}%` }}/></div><div className="mt-1 text-xs text-[#60758b]">{item.prize_unlocked ? "Meta atingida" : `Faltam ${fmtNumber(item.routes_remaining)} corridas`}</div></td><td className="px-4 py-3.5"><div className="text-xs font-bold text-[#29435e]">{fmtMoney(item.prize_cents)}</div><div className={`mt-1 text-xs font-semibold ${item.prize_unlocked ? "text-[#267353]" : "text-[#8191a2]"}`}>{item.prize_unlocked ? "Liberado" : "Em progresso"}</div></td></tr>;
           })}</tbody>
         </table></div>
       </div>

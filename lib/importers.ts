@@ -13,6 +13,7 @@ export type ReferralImportRow = {
   uuid: string;
   name: string;
   region: string;
+  releasedAt: string | null;
   phone: string | null;
   cpf: string | null;
   influencerId: InfluencerId | null;
@@ -53,6 +54,10 @@ function repairMojibake(input: string): string {
   }
 }
 
+export function repairTextEncoding(input: string): string {
+  return repairMojibake(input);
+}
+
 function normalizeText(input: unknown): string {
   return repairMojibake(String(input ?? ""))
     .normalize("NFD")
@@ -84,6 +89,23 @@ export function normalizeInfluencer(value: unknown): InfluencerId | "ignored" | 
 
 type SelectedRowConsumer = (values: string[]) => void;
 
+function decodeCsv(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let decoded: string;
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) {
+    decoded = new TextDecoder("utf-16le").decode(bytes.subarray(2));
+  } else if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+    decoded = new TextDecoder("utf-16be").decode(bytes.subarray(2));
+  } else {
+    try {
+      decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+      decoded = new TextDecoder("windows-1252").decode(bytes);
+    }
+  }
+  return repairMojibake(decoded.replace(/^\uFEFF/, ""));
+}
+
 async function forEachSpreadsheetRow(
   file: File,
   minimumColumns: number,
@@ -98,8 +120,9 @@ async function forEachSpreadsheetRow(
   if (buffer.byteLength > MAX_IMPORT_FILE_BYTES) {
     throw new Error("O arquivo excede o limite local de 25 MB para leitura no navegador.");
   }
-  const workbook = XLSX.read(buffer, {
-    type: "array",
+  const isCsv = /\.csv$/i.test(file.name);
+  const workbook = XLSX.read(isCsv ? decodeCsv(buffer) : buffer, {
+    type: isCsv ? "string" : "array",
     cellDates: false,
     cellFormula: false,
     cellHTML: false,
@@ -128,7 +151,7 @@ async function forEachSpreadsheetRow(
       const value = (sheet as Record<string, unknown>)[address];
       if (typeof value !== "object" || value === null) return "";
       const cell = value as { w?: unknown; v?: unknown };
-      return String(cell.w ?? cell.v ?? "").trim();
+      return repairMojibake(String(cell.w ?? cell.v ?? "")).trim();
     });
     consume(values);
     // Let the browser paint between batches when projecting large worksheets.
@@ -170,6 +193,36 @@ function cleanCpf(value: string): string | null {
     : null;
 }
 
+function validDateParts(year: number, month: number, day: number): string | null {
+  const value = new Date(Date.UTC(year, month - 1, day));
+  if (value.getUTCFullYear() !== year || value.getUTCMonth() !== month - 1 || value.getUTCDate() !== day) return null;
+  return `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
+}
+
+function parseReleasedAt(value: string): string | null {
+  const cleaned = repairMojibake(value).trim();
+  if (!cleaned) return null;
+
+  const iso = cleaned.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:$|[T\s])/);
+  if (iso) return validDateParts(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+
+  const brazilian = cleaned.match(/^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2}|\d{4})(?:$|\s)/);
+  if (brazilian) {
+    const yearPart = Number(brazilian[3]);
+    const year = yearPart < 100 ? (yearPart >= 70 ? 1900 + yearPart : 2000 + yearPart) : yearPart;
+    return validDateParts(year, Number(brazilian[2]), Number(brazilian[1]));
+  }
+
+  if (/^\d{8}$/.test(cleaned) && Number(cleaned.slice(0, 4)) >= 1900) {
+    return validDateParts(Number(cleaned.slice(0, 4)), Number(cleaned.slice(4, 6)), Number(cleaned.slice(6, 8)));
+  }
+
+  const serial = Number(cleaned.replace(",", "."));
+  if (!Number.isFinite(serial) || serial < 20_000 || serial > 100_000) return null;
+  const date = new Date(Date.UTC(1899, 11, 30) + Math.floor(serial) * 86_400_000);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
+
 export async function parseDataCrazy(file: File): Promise<ImportPreview<ReferralImportRow>> {
   const rows = new Map<string, ReferralImportRow>();
   let invalidUuid = 0;
@@ -177,12 +230,13 @@ export async function parseDataCrazy(file: File): Promise<ImportPreview<Referral
   let ambiguous = 0;
   let phoneUnavailable = 0;
   let invalidCpf = 0;
+  let invalidReleaseDate = 0;
   let missingName = 0;
   let duplicateUuids = 0;
 
-  // Fixed spreadsheet positions: B, D, K, AH, AI, AN (zero-based 1, 3, 10, 33, 34, 39).
-  const { fileHash } = await forEachSpreadsheetRow(file, 40, [1, 3, 10, 33, 34, 39], (values) => {
-    const [nameValue, phoneValue, cpfValue, rawUuid, rawInfluencer, region] = values;
+  // Fixed spreadsheet positions: B, D, K, AH, AI, AJ, AN (zero-based 1, 3, 10, 33, 34, 35, 39).
+  const { fileHash } = await forEachSpreadsheetRow(file, 40, [1, 3, 10, 33, 34, 35, 39], (values) => {
+    const [nameValue, phoneValue, cpfValue, rawUuid, rawInfluencer, rawReleasedAt, region] = values;
     const uuid = validUuid(rawUuid);
     if (!uuid) {
       if (rawUuid) invalidUuid += 1;
@@ -198,12 +252,15 @@ export async function parseDataCrazy(file: File): Promise<ImportPreview<Referral
     if (phoneResult.unavailable) phoneUnavailable += 1;
     const cpf = cleanCpf(cpfValue);
     if (cpfValue && !cpf) invalidCpf += 1;
+    const releasedAt = parseReleasedAt(rawReleasedAt);
+    if (rawReleasedAt && !releasedAt) invalidReleaseDate += 1;
     const name = nameValue;
     if (!name) missingName += 1;
     const candidate: ReferralImportRow = {
       uuid,
       name,
       region,
+      releasedAt,
       phone: phoneResult.phone,
       cpf,
       influencerId: normalizedInfluencer,
@@ -225,6 +282,7 @@ export async function parseDataCrazy(file: File): Promise<ImportPreview<Referral
   const warnings: string[] = [];
   if (phoneUnavailable) warnings.push(`${phoneUnavailable} telefone(s) vieram em notação científica e ficarão indisponíveis.`);
   if (invalidCpf) warnings.push(`${invalidCpf} CPF(s) não passaram na validação e serão omitidos.`);
+  if (invalidReleaseDate) warnings.push(`${invalidReleaseDate} data(s) de liberação na coluna AJ não puderam ser lidas e ficarão vazias.`);
   if (ambiguous) warnings.push(`${ambiguous} UUID(s) têm uma atribuição que precisa de revisão administrativa.`);
   if (invalidUuid) warnings.push(`${invalidUuid} linha(s) foram ignoradas por não conterem UUID válido.`);
   if (duplicateUuids) warnings.push(`${duplicateUuids} UUID(s) repetidos foram consolidados; conflitos de influenciador ficaram para revisão.`);
@@ -236,7 +294,7 @@ export async function parseDataCrazy(file: File): Promise<ImportPreview<Referral
     fileName: file.name,
     fileHash,
     warnings,
-    metrics: { total: rows.size, ambiguous, ignored, invalidUuid, phoneUnavailable, invalidCpf, duplicateUuids },
+    metrics: { total: rows.size, ambiguous, ignored, invalidUuid, phoneUnavailable, invalidCpf, invalidReleaseDate, duplicateUuids },
   };
 }
 
