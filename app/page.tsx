@@ -15,7 +15,7 @@ import {
 
 type Role = "admin" | "influencer";
 type Profile = { role: Role; influencer_id: string | null; email: string };
-type Influencer = { id: string; name: string; route_goal: number; prize_cents: number };
+type Influencer = { id: string; name: string; route_goal: number; prize_cents: number; is_demo?: boolean };
 type Referral = {
   referral_id: string;
   uuid: string;
@@ -34,7 +34,7 @@ type ImportSummary = { id: string; kind: string; file_name: string; status: stri
 type Review = { id: string; uuid: string; name: string; region: string | null; raw_influencer: string; status: string };
 type Member = { user_id: string; email: string; role: Role; influencer_id: string | null; influencer_name: string | null };
 type PendingInvite = { id: string; email: string; influencer_name: string | null; created_at: string };
-type AdminOverview = { influencers: Influencer[]; imports: ImportSummary[]; reviews: Review[]; reviewCount: number; members: Member[]; invites: PendingInvite[]; referralCount: number; contributionTotal: number };
+type AdminOverview = { influencers: Influencer[]; availableInfluencers: Influencer[]; imports: ImportSummary[]; reviews: Review[]; reviewCount: number; members: Member[]; invites: PendingInvite[]; referralCount: number; contributionTotal: number };
 type TabId = "dashboard" | "data-crazy" | "performance" | "reviews" | "accounts";
 
 const fmtMoney = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
@@ -85,7 +85,7 @@ export default function Home() {
         setActiveTab("dashboard");
       } else {
         const [{ data: influencerData, error: influencerError }, referralData, { data: importDate, error: importDateError }] = await Promise.all([
-          supabase!.schema(DATA_SCHEMA).from("influencers").select("id,name,route_goal,prize_cents").eq("id", nextProfile.influencer_id).single(),
+          supabase!.schema(DATA_SCHEMA).from("influencers").select("id,name,route_goal,prize_cents,is_demo").eq("id", nextProfile.influencer_id).single(),
           (async () => {
             const all: Referral[] = [];
             for (let offset = 0; ; offset += 500) {
@@ -253,7 +253,6 @@ function Login({ supabase, initialError = "" }: { supabase: NonNullable<ReturnTy
         <h1>Suas indicações, em um só lugar.</h1>
         <p>Consulte as corridas de cada entregador e saiba quanto falta para cada prêmio.</p>
         <div className="login-rule" aria-hidden="true"><span/><span/><span/><span/></div>
-        <p className="login-data-note">Os números são atualizados quando a administração importa novas planilhas.</p>
       </div>
       <span className="login-footer">INDIQUE E GANHE</span>
     </section>
@@ -272,7 +271,6 @@ function Login({ supabase, initialError = "" }: { supabase: NonNullable<ReturnTy
         </form>
         <div className="login-links">{mode === "login" ? <><button onClick={() => { setMode("activate"); setError(""); setNotice(""); }}>Primeiro acesso</button><button onClick={() => { setMode("reset"); setError(""); setNotice(""); }}>Esqueci a senha</button></> : <button onClick={() => { setMode("login"); setError(""); setNotice(""); }}>Voltar para entrar</button>}</div>
       </div>
-      <p className="login-privacy">Cada influenciador vê somente os seus indicados.</p>
     </section>
   </main>;
 }
@@ -315,7 +313,8 @@ function InfluencerDashboard({ referrals, influencer, lastImportAt, search, setS
   const prizeTotal = referrals.filter((referral) => referral.prize_unlocked).reduce((sum, referral) => sum + referral.prize_cents, 0);
   const visible = referrals.filter((referral) => (!onlyUnlocked || referral.prize_unlocked) && `${referral.name} ${referral.region ?? ""} ${referral.uuid}`.toLocaleLowerCase("pt-BR").includes(search.toLocaleLowerCase("pt-BR")));
   return <>
-    <div className="dashboard-heading"><div><h1>Seus indicados</h1><p>Meta de {fmtNumber(influencer?.route_goal ?? 0)} corridas por entregador · {fmtMoney(influencer?.prize_cents ?? 0)} por prêmio</p></div><span>{lastImportAt ? `Última importação: ${new Date(lastImportAt).toLocaleString("pt-BR")}` : "Aguardando a primeira importação"}</span></div>
+    {influencer?.is_demo && <div className="mb-5 rounded-xl border border-[#e8d7a7] bg-[#fff9e9] px-4 py-3 text-sm font-medium text-[#785b1d]">Demonstração: os entregadores e as corridas desta tela são fictícios.</div>}
+    <div className="dashboard-heading"><div><h1>Seus indicados</h1><p>Meta de {fmtNumber(influencer?.route_goal ?? 0)} corridas por entregador · {fmtMoney(influencer?.prize_cents ?? 0)} por prêmio</p></div><span>{influencer?.is_demo ? "Dados de demonstração" : lastImportAt ? `Última importação: ${new Date(lastImportAt).toLocaleString("pt-BR")}` : "Aguardando a primeira importação"}</span></div>
     <section className="referral-section">
       <div className="referral-heading"><div><h2>Progresso dos entregadores</h2><p>Corridas acumuladas até a próxima meta</p></div><div className="referral-controls"><label className="relative"><Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8a9aaf]"/><input aria-label="Buscar entregador" value={search} onChange={(event) => setSearch(event.target.value)} className="h-11 w-full rounded-lg border border-[#dfe6f0] bg-white pl-10 pr-3 text-sm outline-none focus:border-[#2c67b2] sm:w-56" placeholder="Nome ou região"/></label><button onClick={() => setOnlyUnlocked(!onlyUnlocked)} aria-pressed={onlyUnlocked} className="filter-action">{onlyUnlocked ? "Limpar filtro" : "Prêmios conquistados"}</button></div></div>
       {visible.length === 0 ? <EmptyState title={referrals.length ? "Nenhum resultado encontrado" : "Ainda não há indicados"} detail={referrals.length ? "Tente outro nome ou limpe o filtro." : "Os entregadores aparecerão depois da próxima importação do Data Crazy."} /> : <div className="divide-y divide-[#e6ebf2]">{visible.slice(0, visibleCount).map((referral) => <ReferralRow key={referral.referral_id} referral={referral}/>)}</div>}
@@ -519,7 +518,7 @@ function AccountsPanel({ overview, refresh }: { overview: AdminOverview; refresh
       <p className="mt-1 text-[13px] leading-5 text-[#63788e]">Escolha o e-mail e gere um código de uso único. A pessoa cria a senha no primeiro acesso, sem confirmação por e-mail.</p>
       <form onSubmit={invite} className="mt-5 space-y-3">
         <label className="block text-xs font-bold text-[#405b75]">E-mail do acesso<input type="email" required value={email} onChange={(event)=>setEmail(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-[#d4deeb] px-3 text-xs outline-none focus:border-[#2b6cbb]" placeholder="parceiro@email.com"/></label>
-        <label className="block text-xs font-bold text-[#405b75]">Influenciador<select required value={influencerId} onChange={(event)=>setInfluencerId(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-[#d4deeb] bg-white px-3 text-xs outline-none focus:border-[#2b6cbb]"><option value="">Selecione</option>{overview.influencers.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label className="block text-xs font-bold text-[#405b75]">Influenciador<select required value={influencerId} onChange={(event)=>setInfluencerId(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-[#d4deeb] bg-white px-3 text-xs outline-none focus:border-[#2b6cbb]"><option value="">Selecione</option>{overview.availableInfluencers.map((item)=><option key={item.id} value={item.id}>{item.name}{item.is_demo ? " · demonstração" : ""}</option>)}</select></label>
         {error&&<p className="rounded-lg bg-[#fff3ef] p-2.5 text-xs text-[#a94b37]">{error}</p>}{notice&&<p className="rounded-lg bg-[#eaf2fc] p-2.5 text-xs text-[#205b9e]">{notice}</p>}
         <button disabled={busy} className="flex h-11 items-center gap-2 rounded-lg bg-[#185aa9] px-3.5 text-[13px] font-bold text-white hover:bg-[#114886] disabled:opacity-55">{busy?<LoaderCircle size={14} className="animate-spin"/>:<Mail size={14}/>}Gerar código de acesso</button>
       </form>
