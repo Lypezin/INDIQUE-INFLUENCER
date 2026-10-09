@@ -70,6 +70,9 @@ export async function callAdminApi<T>(
   } else if (action === "admin-overview") {
     const result = await supabase.schema(DATA_SCHEMA).rpc("admin_overview");
     data = result.data; error = result.error;
+  } else if (action === "performance-coverage") {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("performance_data_coverage");
+    data = result.data; error = result.error;
   } else if (action === "account-name-set") {
     const result = await supabase.schema(DATA_SCHEMA).rpc("update_admin_display_name", {
       p_user_id: payload.userId,

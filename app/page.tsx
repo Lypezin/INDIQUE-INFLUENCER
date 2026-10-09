@@ -51,6 +51,8 @@ type Review = { id: string; uuid: string; name: string; region: string | null; r
 type Member = { user_id: string; email: string; role: Role; display_name: string | null; influencer_id: string | null; influencer_name: string | null };
 type PendingInvite = { id: string; email: string; role: Role; influencer_name: string | null; created_at: string };
 type AdminOverview = { influencers: Influencer[]; availableInfluencers: Influencer[]; imports: ImportSummary[]; reviews: Review[]; reviewCount: number; members: Member[]; invites: PendingInvite[]; referralCount: number; contributionTotal: number };
+type PerformanceCoverageCity = { city: string; firstImportedAt: string | null; lastImportedAt: string | null; recordCount: number; importCount: number };
+type PerformanceCoverage = { firstImportedAt: string | null; lastImportedAt: string | null; recordCount: number; importCount: number; cities: PerformanceCoverageCity[] };
 type AdminReferral = { uuid: string; name: string; region: string | null; released_at: string | null; phone: string | null; cpf: string | null; influencer_id: string; influencer_name: string; routes: number; route_goal: number; prize_cents: number; prize_unlocked: boolean; routes_remaining: number };
 type AdminReferralsResult = { items: AdminReferral[]; total: number; totalRoutes: number; unlockedCount: number; unlockedPrizeCents: number };
 type TabId = "dashboard" | "referrals" | "data-crazy" | "performance" | "reviews" | "accounts" | "profile" | "imports";
@@ -65,6 +67,12 @@ const fmtDate = (value: string | null) => {
     ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
     : new Date(value);
   return Number.isNaN(date.getTime()) ? "Não informada" : date.toLocaleDateString("pt-BR");
+};
+const fmtDateRange = (first: string | null, last: string | null) => {
+  if (!first || !last) return "Sem dados";
+  const start = fmtDate(first);
+  const end = fmtDate(last);
+  return start === end ? start : `${start} – ${end}`;
 };
 const subscribeRecovery = (callback: () => void) => {
   window.addEventListener("hashchange", callback);
@@ -521,6 +529,9 @@ function DataCrazySyncPanel({ refresh }: { refresh: () => Promise<void> }) {
 
 function ImportPanel({ overview, refresh }: { overview: AdminOverview; refresh: () => Promise<void> }) {
   const [preview, setPreview] = useState<ImportPreview<PerformanceImportRow> | null>(null);
+  const [coverage, setCoverage] = useState<PerformanceCoverage | null>(null);
+  const [coverageLoading, setCoverageLoading] = useState(true);
+  const [coverageError, setCoverageError] = useState("");
   const [duplicate, setDuplicate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [batchId, setBatchId] = useState("");
@@ -528,6 +539,16 @@ function ImportPanel({ overview, refresh }: { overview: AdminOverview; refresh: 
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const lastSame = overview.imports.find((item) => item.kind === "performance");
+
+  const loadCoverage = useCallback(async () => {
+    setCoverageLoading(true);
+    setCoverageError("");
+    try { setCoverage(await callAdminApi<PerformanceCoverage>("performance-coverage", {})); }
+    catch (cause) { setCoverageError(cause instanceof Error ? cause.message : "Não foi possível consultar o período dos dados."); }
+    finally { setCoverageLoading(false); }
+  }, []);
+
+  useEffect(() => { void loadCoverage(); }, [loadCoverage, overview.imports]);
 
   async function chooseFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -591,11 +612,24 @@ function ImportPanel({ overview, refresh }: { overview: AdminOverview; refresh: 
     finally { setBusy(false); }
   }
 
-  return <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(280px,.75fr)]"><section className="rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><div className="flex items-start gap-3"><div className="flex size-10 items-center justify-center rounded-xl bg-[#eaf1fa] text-[#205b9e]"><CloudUpload size={19}/></div><div><h2 className="text-[15px] font-bold">Importar Performance</h2><p className="mt-1 text-[13px] text-[#60758b]">Adiciona as corridas desta importação ao acumulado existente.</p></div></div>
+  return <div><PerformanceCoveragePanel coverage={coverage} loading={coverageLoading} error={coverageError} onRetry={() => void loadCoverage()}/><div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(280px,.75fr)]"><section className="rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><div className="flex items-start gap-3"><div className="flex size-10 items-center justify-center rounded-xl bg-[#eaf1fa] text-[#205b9e]"><CloudUpload size={19}/></div><div><h2 className="text-[15px] font-bold">Importar Performance</h2><p className="mt-1 text-[13px] text-[#60758b]">Adiciona as corridas desta importação ao acumulado existente.</p></div></div>
     <label className="mt-6 flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-[#c7d5e6] bg-[#f8fbff] px-4 py-6 text-center transition hover:border-[#2b6cbb] hover:bg-[#f5f9fe]"><input className="sr-only" type="file" accept=".csv,.xlsx,.xls" onChange={(event) => void chooseFile(event)}/><div className="flex size-10 items-center justify-center rounded-[13px] bg-white text-[#245b9b] shadow-sm">{busy && !preview ? <LoaderCircle size={19} className="animate-spin"/> : <Download size={19}/>}</div><span className="mt-3 text-[13px] font-bold">Selecione um arquivo para conferir</span><span className="mt-1 text-xs text-[#697f94]">CSV, .xlsx ou .xls · até 25 MB e 100 mil linhas · confira antes de importar</span></label>
     {error && <p role="alert" className="mt-4 rounded-xl bg-[#fff3ef] px-3.5 py-3 text-xs text-[#a94b37]">{error}</p>}{message && <p role="status" className="mt-4 rounded-xl bg-[#eaf2fc] px-3.5 py-3 text-xs text-[#205b9e]">{message}</p>}
     {preview && <div className="mt-5 rounded-xl border border-[#e5ebf4] bg-white p-4"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><div className="truncate text-[13px] font-bold">{preview.fileName}</div><div className="mt-1 text-xs text-[#60758b]">SHA-256 · {preview.fileHash.slice(0, 18)}…</div></div><span className="rounded-full bg-[#eaf1fa] px-2.5 py-1 text-xs font-bold text-[#205b9e]">Pronto para importar</span></div><div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{Object.entries(preview.metrics).slice(0, 4).map(([label, value]) => <div key={label} className="rounded-lg bg-[#f7faff] px-3 py-2"><div className="text-xs text-[#697f94]">{label.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)}</div><div className="mt-1 text-sm font-bold">{fmtNumber(value)}</div></div>)}</div>{preview.warnings.length > 0 && <div className="mt-4 space-y-1.5 rounded-lg bg-[#fff9ed] p-3 text-xs leading-4 text-[#8a6532]">{preview.warnings.map((warning) => <div key={warning} className="flex gap-2"><CircleAlert size={13} className="mt-0.5 shrink-0"/>{warning}</div>)}</div>}{duplicate && <div className="mt-4 rounded-lg border border-[#f1d9ae] bg-[#fff9ed] p-3 text-[13px] leading-5 text-[#795c2f]">Este arquivo já foi importado antes. A Performance soma a importação novamente e pode duplicar corridas. Deseja continuar mesmo assim?</div>}{busy && <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-[#e8eef7]"><div className="h-full rounded-full bg-[#2f6fc2] transition-all" style={{width:`${progress}%`}}/></div>}<div className="mt-4 flex flex-wrap items-center justify-end gap-2"><button onClick={() => { if (batchId) void callAdminApi("import-cancel", { batchId }).catch(() => undefined); setBatchId(""); setPreview(null); setDuplicate(false); }} disabled={busy} className="h-11 rounded-lg px-3 text-[13px] font-semibold text-[#60758b] hover:bg-[#f6f8f7]">Cancelar</button><button onClick={() => void importFile(duplicate)} disabled={busy} className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#185aa9] px-4 text-[13px] font-bold text-white hover:bg-[#114886] disabled:opacity-55">{busy ? <LoaderCircle size={14} className="animate-spin"/> : <Check size={14}/>} {duplicate ? "Continuar e somar novamente" : "Adicionar ao acumulado"}</button></div></div>}
-  </section><div className="space-y-4"><section className="rounded-2xl border border-[#dfe6f0] bg-white p-5"><h3 className="text-[13px] font-bold">Mapeamento automático</h3><div className="mt-4 space-y-3 text-[13px] text-[#60758b]">{[["UUID", "F · Identificador"], ["Entregador", "G · Nome"], ["Praça", "H · Região"], ["Corridas", "R · Pedidos aceitos e concluídos"]].map(([a,b])=><div key={a} className="flex justify-between gap-3 border-b border-[#edf1f6] pb-2.5 last:border-0 last:pb-0"><span>{a}</span><span className="text-right font-semibold text-[#29435e]">{b}</span></div>)}</div></section><section className="rounded-2xl bg-[#eaf1fa] p-5"><div className="flex items-center gap-2 text-[13px] font-bold text-[#266a55]"><ShieldCheck size={15}/>Importação protegida</div><p className="mt-2 text-xs leading-[18px] text-[#60758b]">Cada UUID é somado dentro do arquivo e depois acrescido ao histórico. Reimportações intencionais somam novamente.</p>{lastSame && <div className="mt-3 border-t border-[#dce8f6] pt-3 text-xs text-[#60758b]">Último arquivo: <span className="font-semibold">{lastSame.file_name}</span></div>}</section></div></div>;
+  </section><div className="space-y-4"><section className="rounded-2xl border border-[#dfe6f0] bg-white p-5"><h3 className="text-[13px] font-bold">Mapeamento automático</h3><div className="mt-4 space-y-3 text-[13px] text-[#60758b]">{[["UUID", "F · Identificador"], ["Entregador", "G · Nome"], ["Praça", "H · Região"], ["Corridas", "R · Pedidos aceitos e concluídos"]].map(([a,b])=><div key={a} className="flex justify-between gap-3 border-b border-[#edf1f6] pb-2.5 last:border-0 last:pb-0"><span>{a}</span><span className="text-right font-semibold text-[#29435e]">{b}</span></div>)}</div></section><section className="rounded-2xl bg-[#eaf1fa] p-5"><div className="flex items-center gap-2 text-[13px] font-bold text-[#266a55]"><ShieldCheck size={15}/>Importação protegida</div><p className="mt-2 text-xs leading-[18px] text-[#60758b]">Cada UUID é somado dentro do arquivo e depois acrescido ao histórico. Reimportações intencionais somam novamente.</p>{lastSame && <div className="mt-3 border-t border-[#dce8f6] pt-3 text-xs text-[#60758b]">Último arquivo: <span className="font-semibold">{lastSame.file_name}</span></div>}</section></div></div></div>;
+}
+
+function PerformanceCoveragePanel({ coverage, loading, error, onRetry }: { coverage: PerformanceCoverage | null; loading: boolean; error: string; onRetry: () => void }) {
+  return <section className="mb-4 rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6">
+    <div className="flex items-start gap-3"><div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#eaf1fa] text-[#205b9e]"><CalendarDays size={18}/></div><div><h2 className="text-base font-bold">Intervalo dos dados de Performance</h2><p className="mt-1 max-w-3xl text-sm leading-5 text-[#60758b]">Mostra quando as importações foram adicionadas ao sistema. As colunas importadas da planilha não incluem a data individual de cada corrida.</p></div></div>
+    {loading ? <div className="mt-5 flex items-center gap-2 text-sm text-[#60758b]" role="status"><LoaderCircle size={16} className="animate-spin"/>Consultando os períodos disponíveis…</div>
+      : error ? <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[#fff3ef] px-4 py-3 text-sm text-[#a94b37]" role="alert"><span>{error}</span><button onClick={onRetry} className="min-h-10 rounded-lg border border-[#e6bdb4] px-3 font-semibold hover:bg-white">Tentar novamente</button></div>
+      : !coverage || coverage.importCount === 0 ? <p className="mt-5 rounded-xl bg-[#f7faff] px-4 py-4 text-sm text-[#60758b]">Ainda não há importações concluídas de Performance.</p>
+      : <>
+        <div className="mt-5 flex flex-col gap-1 rounded-xl bg-[#f7faff] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-xs font-semibold text-[#60758b]">Período geral</div><div className="mt-1 text-base font-bold tabular-nums text-[#203b58]">{fmtDateRange(coverage.firstImportedAt, coverage.lastImportedAt)}</div></div><div className="text-xs text-[#60758b]">{fmtNumber(coverage.recordCount)} registros · {fmtNumber(coverage.importCount)} importações</div></div>
+        <div className="mt-5"><div className="mb-1 flex flex-wrap items-baseline justify-between gap-2"><h3 className="text-sm font-bold">Período por cidade / praça</h3><span className="text-xs text-[#74889b]">Data de entrada no sistema</span></div><ul className="divide-y divide-[#e6ebf2]">{coverage.cities.map((item) => <li key={item.city} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><div className="truncate text-sm font-semibold text-[#29435e]">{repairTextEncoding(item.city)}</div><div className="mt-0.5 text-xs text-[#74889b]">{fmtNumber(item.recordCount)} registros · {fmtNumber(item.importCount)} importações</div></div><div className="shrink-0 text-left sm:text-right"><div className="text-xs font-semibold text-[#74889b]">Intervalo</div><div className="mt-0.5 text-sm tabular-nums text-[#405b76]">{fmtDateRange(item.firstImportedAt, item.lastImportedAt)}</div></div></li>)}</ul></div>
+      </>}
+  </section>;
 }
 
 const historyStatusLabels: Record<ImportHistoryEntry["status"], string> = {
