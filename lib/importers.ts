@@ -36,6 +36,8 @@ export type ImportPreview<T> = {
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const MAX_IMPORT_FILE_BYTES = 25 * 1024 * 1024;
+const MAX_IMPORT_SOURCE_ROWS = 100_000;
 const influencerIds: InfluencerId[] = [
   "jaiminho", "jhowjhow", "felipe", "00-brocador", "sassa", "vini", "gui", "biel", "thais",
 ];
@@ -80,36 +82,67 @@ export function normalizeInfluencer(value: unknown): InfluencerId | "ignored" | 
   return null;
 }
 
-async function readSheet(file: File): Promise<{ matrix: unknown[][] }> {
+type SelectedRowConsumer = (values: string[]) => void;
+
+async function forEachSpreadsheetRow(
+  file: File,
+  minimumColumns: number,
+  selectedColumns: readonly number[],
+  consume: SelectedRowConsumer,
+): Promise<{ fileHash: string; sourceRows: number }> {
+  if (file.size > MAX_IMPORT_FILE_BYTES) {
+    throw new Error("O arquivo excede o limite local de 25 MB para leitura no navegador.");
+  }
+
   const [buffer, XLSX] = await Promise.all([file.arrayBuffer(), import("xlsx")]);
-  const workbook = XLSX.read(buffer, { type: "array", cellDates: false, raw: false });
+  if (buffer.byteLength > MAX_IMPORT_FILE_BYTES) {
+    throw new Error("O arquivo excede o limite local de 25 MB para leitura no navegador.");
+  }
+  const workbook = XLSX.read(buffer, {
+    type: "array",
+    cellDates: false,
+    cellFormula: false,
+    cellHTML: false,
+    raw: false,
+    // Keep one sentinel row so an oversized file can be rejected instead of silently truncated.
+    sheetRows: MAX_IMPORT_SOURCE_ROWS + 2,
+  });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   if (!sheet) throw new Error("A planilha não tem uma aba com dados.");
-  const range = XLSX.utils.decode_range(sheet["!ref"] ?? "A1");
-  const matrix: unknown[][] = [];
-  for (let row = range.s.r; row <= range.e.r; row += 1) {
-    const values: unknown[] = [];
-    for (let col = range.s.c; col <= range.e.c; col += 1) {
-      const cell = sheet[XLSX.utils.encode_cell({ r: row, c: col })];
-      values[col] = cell?.w ?? cell?.v ?? "";
-    }
-    matrix[row] = values;
-  }
-  return { matrix };
-}
 
-function cell(matrix: unknown[][], row: number, column: number): string {
-  return String(matrix[row]?.[column] ?? "").trim();
+  const rangeRef = sheet["!fullref"] ?? sheet["!ref"];
+  if (!rangeRef) throw new Error("A planilha não tem uma aba com dados.");
+  const range = XLSX.utils.decode_range(rangeRef);
+  if (range.s.r !== 0) throw new Error("O cabeçalho da planilha precisa estar na primeira linha.");
+  if (range.e.c + 1 < minimumColumns) {
+    throw new Error(`A planilha precisa conter ao menos ${minimumColumns} colunas.`);
+  }
+  const sourceRows = range.e.r;
+  if (sourceRows > MAX_IMPORT_SOURCE_ROWS) {
+    throw new Error(`A planilha excede o limite de ${MAX_IMPORT_SOURCE_ROWS.toLocaleString("pt-BR")} linhas de dados.`);
+  }
+
+  for (let row = 1; row <= sourceRows; row += 1) {
+    const values = selectedColumns.map((column) => {
+      const address = XLSX.utils.encode_cell({ r: row, c: column });
+      const value = (sheet as Record<string, unknown>)[address];
+      if (typeof value !== "object" || value === null) return "";
+      const cell = value as { w?: unknown; v?: unknown };
+      return String(cell.w ?? cell.v ?? "").trim();
+    });
+    consume(values);
+    // Let the browser paint between batches when projecting large worksheets.
+    if (row % 2_000 === 0) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+
+  const digest = await crypto.subtle.digest("SHA-256", buffer);
+  const fileHash = [...new Uint8Array(digest)].map((part) => part.toString(16).padStart(2, "0")).join("");
+  return { fileHash, sourceRows };
 }
 
 function validUuid(value: string): string | null {
   const cleaned = value.trim().replace(/^\{|\}$/g, "").toLowerCase();
   return UUID.test(cleaned) ? cleaned : null;
-}
-
-async function sha256(file: File): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
-  return [...new Uint8Array(digest)].map((part) => part.toString(16).padStart(2, "0")).join("");
 }
 
 function cleanPhone(value: string): { phone: string | null; unavailable: boolean } {
@@ -138,8 +171,6 @@ function cleanCpf(value: string): string | null {
 }
 
 export async function parseDataCrazy(file: File): Promise<ImportPreview<ReferralImportRow>> {
-  const { matrix } = await readSheet(file);
-  if ((matrix[0]?.length ?? 0) < 40) throw new Error("A planilha Data Crazy precisa conter ao menos 40 colunas, incluindo AH e AN.");
   const rows = new Map<string, ReferralImportRow>();
   let invalidUuid = 0;
   let ignored = 0;
@@ -150,30 +181,29 @@ export async function parseDataCrazy(file: File): Promise<ImportPreview<Referral
   let duplicateUuids = 0;
 
   // Fixed spreadsheet positions: B, D, K, AH, AI, AN (zero-based 1, 3, 10, 33, 34, 39).
-  for (let index = 1; index < matrix.length; index += 1) {
-    const uuid = validUuid(cell(matrix, index, 33));
+  const { fileHash } = await forEachSpreadsheetRow(file, 40, [1, 3, 10, 33, 34, 39], (values) => {
+    const [nameValue, phoneValue, cpfValue, rawUuid, rawInfluencer, region] = values;
+    const uuid = validUuid(rawUuid);
     if (!uuid) {
-      if (cell(matrix, index, 33)) invalidUuid += 1;
-      continue;
+      if (rawUuid) invalidUuid += 1;
+      return;
     }
-    const rawInfluencer = cell(matrix, index, 34);
     const normalizedInfluencer = normalizeInfluencer(rawInfluencer);
     if (normalizedInfluencer === "ignored") {
       ignored += 1;
-      continue;
+      return;
     }
     if (!normalizedInfluencer) ambiguous += 1;
-    const phoneResult = cleanPhone(cell(matrix, index, 3));
+    const phoneResult = cleanPhone(phoneValue);
     if (phoneResult.unavailable) phoneUnavailable += 1;
-    const cpfValue = cell(matrix, index, 10);
     const cpf = cleanCpf(cpfValue);
     if (cpfValue && !cpf) invalidCpf += 1;
-    const name = cell(matrix, index, 1);
+    const name = nameValue;
     if (!name) missingName += 1;
     const candidate: ReferralImportRow = {
       uuid,
       name,
-      region: cell(matrix, index, 39),
+      region,
       phone: phoneResult.phone,
       cpf,
       influencerId: normalizedInfluencer,
@@ -190,7 +220,7 @@ export async function parseDataCrazy(file: File): Promise<ImportPreview<Referral
       }
     }
     rows.set(uuid, candidate);
-  }
+  });
 
   const warnings: string[] = [];
   if (phoneUnavailable) warnings.push(`${phoneUnavailable} telefone(s) vieram em notação científica e ficarão indisponíveis.`);
@@ -204,51 +234,49 @@ export async function parseDataCrazy(file: File): Promise<ImportPreview<Referral
   return {
     rows: [...rows.values()],
     fileName: file.name,
-    fileHash: await sha256(file),
+    fileHash,
     warnings,
     metrics: { total: rows.size, ambiguous, ignored, invalidUuid, phoneUnavailable, invalidCpf, duplicateUuids },
   };
 }
 
 export async function parsePerformance(file: File): Promise<ImportPreview<PerformanceImportRow>> {
-  const { matrix } = await readSheet(file);
-  if ((matrix[0]?.length ?? 0) < 18) throw new Error("A planilha Performance precisa conter ao menos 18 colunas, incluindo R.");
   const byUuid = new Map<string, PerformanceImportRow>();
   let invalidUuid = 0;
   let invalidRoutes = 0;
   let repeatedRows = 0;
 
   // Fixed spreadsheet positions: F UUID, G name, H region, R completed rides.
-  for (let index = 1; index < matrix.length; index += 1) {
-    const rawUuid = cell(matrix, index, 5);
-    if (!rawUuid) continue;
+  const { fileHash, sourceRows } = await forEachSpreadsheetRow(file, 18, [5, 6, 7, 17], (values) => {
+    const [rawUuid, name, region, rawRouteValue] = values;
+    if (!rawUuid) return;
     const uuid = validUuid(rawUuid);
     if (!uuid) {
       invalidUuid += 1;
-      continue;
+      return;
     }
-    const rawRoutes = cell(matrix, index, 17).replace(/\s/g, "").replace(",", ".");
+    const rawRoutes = rawRouteValue.replace(/\s/g, "").replace(",", ".");
     const routes = Number(rawRoutes);
     if (!Number.isInteger(routes) || routes < 0) {
       invalidRoutes += 1;
-      continue;
+      return;
     }
     const wholeRoutes = routes;
     const previous = byUuid.get(uuid);
     if (previous) {
       previous.routes += wholeRoutes;
-      if (!previous.name) previous.name = cell(matrix, index, 6);
-      if (cell(matrix, index, 7)) previous.region = cell(matrix, index, 7);
+      if (!previous.name) previous.name = name;
+      if (region) previous.region = region;
       repeatedRows += 1;
     } else {
       byUuid.set(uuid, {
         uuid,
-        name: cell(matrix, index, 6),
-        region: cell(matrix, index, 7),
+        name,
+        region,
         routes: wholeRoutes,
       });
     }
-  }
+  });
   const warnings: string[] = [];
   if (invalidUuid) warnings.push(`${invalidUuid} linha(s) foram ignoradas por não conterem UUID válido.`);
   if (invalidRoutes) warnings.push(`${invalidRoutes} linha(s) foram ignoradas por terem uma quantidade de corridas inválida.`);
@@ -257,13 +285,13 @@ export async function parsePerformance(file: File): Promise<ImportPreview<Perfor
   return {
     rows: [...byUuid.values()],
     fileName: file.name,
-    fileHash: await sha256(file),
+    fileHash,
     warnings,
     metrics: {
       total: byUuid.size,
       invalidUuid,
       invalidRoutes,
-      sourceRows: matrix.length - 1,
+      sourceRows,
       repeatedRows,
       totalRoutes: [...byUuid.values()].reduce((sum, item) => sum + item.routes, 0),
     },

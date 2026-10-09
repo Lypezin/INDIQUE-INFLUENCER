@@ -38,7 +38,7 @@ create table if not exists indique_ganhe_influencer.account_invites (
   constraint account_invites_role_owner check ((role = 'admin' and influencer_id is null) or (role = 'influencer' and influencer_id is not null))
 );
 insert into indique_ganhe_influencer.account_invites (email, role, influencer_id)
-values ('owner@gmail.com', 'admin', null) on conflict (email) do nothing;
+values ('foolype@gmail.com', 'admin', null) on conflict (email) do nothing;
 
 create table if not exists indique_ganhe_influencer.import_batches (
   id uuid primary key default gen_random_uuid(),

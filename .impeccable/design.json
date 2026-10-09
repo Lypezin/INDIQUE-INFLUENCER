@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-09T16:05:45Z",
+  "title": "Design System: Indique e Ganhe",
+  "extensions": {
+    "shadows": [{"name": "login-surface", "value": "0 16px 32px -28px #294865", "purpose": "Separar o formulário do fundo sem competir com o conteúdo."}],
+    "motion": [{"name": "state", "value": "200ms ease-out", "purpose": "Mudanças de cor em botões e preenchimento do progresso."}],
+    "breakpoints": [{"name": "sm", "value": "640px"}, {"name": "lg", "value": "1024px"}]
+  },
+  "components": []
+}

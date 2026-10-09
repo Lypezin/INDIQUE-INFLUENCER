@@ -1,0 +1,2 @@
+[functions.indique-ganhe-access]
+verify_jwt = false
