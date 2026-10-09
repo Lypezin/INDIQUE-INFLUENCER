@@ -2,11 +2,11 @@ import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.1
 
 const DATA_SCHEMA = "indique_ganhe_influencer";
 const API_BASE = "https://api.g1.datacrazy.io/api/v1";
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 300;
 const MAX_PAGES_PER_INVOCATION = 12;
 const MIN_ROUTE_INTERVAL_MS = 3_100; // At most 20 calls/minute/route, below Data Crazy's default 60.
 const MAX_BODY_BYTES = 4_096;
-const FIRST_SYNC_MONTH = "2020-01-01";
+const FIRST_SYNC_MONTH = "2026-01-01";
 const BEFORE_FIRST_SYNC_MONTH = new Date(Date.parse(`${FIRST_SYNC_MONTH}T00:00:00.000Z`) - 1).toISOString();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -378,14 +378,14 @@ async function checkPipelines(env: Env): Promise<void> {
 }
 
 async function checkDateCoverage(env: Env): Promise<void> {
-  // The monthly cursor starts in 2020. Fail closed if the tenant has older
+  // The monthly cursor starts in 2026. Fail closed if the tenant has older
   // records, so a new historic import never silently disappears.
   for (const route of ["businesses", "leads"] as const) {
     const params = new URLSearchParams({ skip: "0", take: "1" });
     params.set("filter[createdAtLessOrEqual]", BEFORE_FIRST_SYNC_MONTH);
     const { data } = await apiGet(env, route, params);
     if (data.length > 0) {
-      throw new SyncError("Há registros Data Crazy anteriores a 2020. A lista atual foi preservada para ampliar o período da coleta.", false);
+      throw new SyncError("Há registros Data Crazy anteriores a 2026. A lista atual foi preservada para ampliar o período da coleta.", false);
     }
   }
 }
