@@ -9,6 +9,8 @@ const LOCAL_ORIGINS = [
   "http://localhost:8787",
   "http://127.0.0.1:8787",
   "https://indique-ganhe-influencer.flowy-ocean-3139.chatgpt.site",
+  "https://indique-influencer.vercel.app",
+  "https://indique-influencer-adggg79jo-luizs-projects-6df377ef.vercel.app",
 ];
 
 type RequestBody = {
