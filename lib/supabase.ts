@@ -54,6 +54,20 @@ export async function callAdminApi<T>(
   } else if (action === "admin-overview") {
     const result = await supabase.schema(DATA_SCHEMA).rpc("admin_overview");
     data = result.data; error = result.error;
+  } else if (action === "account-name-set") {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("update_admin_display_name", {
+      p_user_id: payload.userId,
+      p_display_name: payload.displayName,
+    });
+    data = result.data; error = result.error;
+  } else if (action === "admin-referrals") {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("admin_referrals_page", {
+      p_limit: payload.limit,
+      p_offset: payload.offset,
+      p_influencer_id: payload.influencerId,
+      p_search: payload.search,
+    });
+    data = result.data; error = result.error;
   } else if (action === "import-start") {
     const result = await supabase.schema(DATA_SCHEMA).rpc("start_import", {
       p_kind: payload.kind,

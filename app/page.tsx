@@ -14,7 +14,7 @@ import {
 } from "@/lib/importers";
 
 type Role = "admin" | "influencer";
-type Profile = { role: Role; influencer_id: string | null; email: string };
+type Profile = { user_id: string; role: Role; influencer_id: string | null; email: string; display_name: string | null };
 type Influencer = { id: string; name: string; route_goal: number; prize_cents: number; is_demo?: boolean };
 type Referral = {
   referral_id: string;
@@ -42,10 +42,12 @@ type ImportHistorySummary = { total: number; staging: number; completed: number;
 type ImportHistoryResult = { items: ImportHistoryEntry[]; total: number; summary: ImportHistorySummary };
 type ImportEvent = { id: number; event_type: string; message: string; details: Record<string, unknown>; created_at: string; actor_email: string };
 type Review = { id: string; uuid: string; name: string; region: string | null; raw_influencer: string; status: string };
-type Member = { user_id: string; email: string; role: Role; influencer_id: string | null; influencer_name: string | null };
+type Member = { user_id: string; email: string; role: Role; display_name: string | null; influencer_id: string | null; influencer_name: string | null };
 type PendingInvite = { id: string; email: string; role: Role; influencer_name: string | null; created_at: string };
 type AdminOverview = { influencers: Influencer[]; availableInfluencers: Influencer[]; imports: ImportSummary[]; reviews: Review[]; reviewCount: number; members: Member[]; invites: PendingInvite[]; referralCount: number; contributionTotal: number };
-type TabId = "dashboard" | "data-crazy" | "performance" | "reviews" | "accounts" | "imports";
+type AdminReferral = { uuid: string; name: string; region: string | null; phone: string | null; cpf: string | null; influencer_id: string; influencer_name: string; routes: number; route_goal: number; prize_cents: number; prize_unlocked: boolean; routes_remaining: number };
+type AdminReferralsResult = { items: AdminReferral[]; total: number; totalRoutes: number; unlockedCount: number; unlockedPrizeCents: number };
+type TabId = "dashboard" | "referrals" | "data-crazy" | "performance" | "reviews" | "accounts" | "imports";
 
 const fmtMoney = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
 const fmtNumber = (number: number) => new Intl.NumberFormat("pt-BR").format(number);
@@ -58,6 +60,7 @@ const getRecoverySnapshot = () => typeof window !== "undefined" && (window.locat
 const getRecoveryServerSnapshot = () => false;
 const adminTabs: { id: TabId; label: string; icon: typeof BarChart3 }[] = [
   { id: "dashboard", label: "Visão geral", icon: BarChart3 },
+  { id: "referrals", label: "Indicados", icon: Users },
   { id: "data-crazy", label: "Data Crazy", icon: FileSpreadsheet },
   { id: "performance", label: "Performance", icon: ArrowDownUp },
   { id: "reviews", label: "Revisões", icon: ClipboardList },
@@ -95,6 +98,10 @@ export default function Home() {
     try { window.localStorage.setItem(`indique-ganhe:admin-tab:${profile.email.trim().toLowerCase()}`, tab); }
     catch { /* The current view still works when browser storage is unavailable. */ }
   }, [profile]);
+
+  const updateProfileDisplayName = useCallback((userId: string, displayName: string | null) => {
+    setProfile((current) => current?.user_id === userId ? { ...current, display_name: displayName } : current);
+  }, []);
 
   const loadWorkspace = useCallback(async () => {
     setLoading(true);
@@ -180,7 +187,7 @@ export default function Home() {
   const isAdmin = profile.role === "admin";
   const visibleTabs = isAdmin ? adminTabs : adminTabs.slice(0, 1);
   const title = isAdmin ? "Administração" : `Indicações de ${influencer?.name ?? "você"}`;
-  const subtitle = isAdmin ? "Bases, revisões e acessos" : "Corridas e prêmios por entregador";
+  const subtitle = isAdmin ? "Indicados, planilhas, revisões e acessos" : "Corridas e prêmios por entregador";
 
   return (
     <main className="min-h-screen bg-[#f6f8fc] text-[#172a40]">
@@ -205,8 +212,8 @@ export default function Home() {
               <div className="min-w-0"><div className="truncate text-sm font-semibold sm:text-[15px]">{title}</div><div className="mt-0.5 hidden text-xs text-[#7a8b8e] sm:block">{subtitle}</div></div>
             </div>
             <div className="flex items-center gap-3">
-              <div className="hidden text-right sm:block"><div className="text-xs font-semibold">{isAdmin ? "Administrador" : influencer?.name}</div><div className="mt-0.5 max-w-44 truncate text-[13px] text-[#87979a]">{profile.email}</div></div>
-              <div className="flex size-10 items-center justify-center rounded-full bg-[#eaf1fa] text-sm font-bold text-[#1f61af]">{(isAdmin ? "AD" : influencer?.name?.slice(0, 2) ?? "IG").toUpperCase()}</div>
+              <div className="hidden text-right sm:block"><div className="text-xs font-semibold">{isAdmin ? profile.display_name || "Administrador" : influencer?.name}</div><div className="mt-0.5 max-w-44 truncate text-[13px] text-[#87979a]">{profile.email}</div></div>
+              <div className="flex size-10 items-center justify-center rounded-full bg-[#eaf1fa] text-sm font-bold text-[#1f61af]">{(isAdmin ? profile.display_name?.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join("") || "AD" : influencer?.name?.slice(0, 2) ?? "IG").toUpperCase()}</div>
               <button onClick={() => void supabase.auth.signOut()} className="flex size-11 items-center justify-center rounded-lg text-[#60758b] hover:bg-[#f0f4f9]" title="Sair" aria-label="Sair"><LogOut size={19} /></button>
             </div>
           </header>
@@ -215,7 +222,7 @@ export default function Home() {
           <div className="mx-auto max-w-[1320px] px-4 pb-12 pt-7 sm:px-8 sm:pt-9 lg:px-10">
             {loadError && <div className="mb-5 flex items-start gap-3 rounded-xl border border-[#f2d8bd] bg-[#fffaf4] p-4 text-sm text-[#84572f]"><CircleAlert size={18} className="mt-0.5 shrink-0" />{loadError}</div>}
             {!isAdmin ? <InfluencerDashboard referrals={referrals} influencer={influencer} lastImportAt={lastImportAt} search={search} setSearch={setSearch} onlyUnlocked={onlyUnlocked} setOnlyUnlocked={setOnlyUnlocked} /> : (
-              <AdminDashboard activeTab={activeTab} overview={overview} refresh={refreshAdmin} onTab={selectTab} />
+              <AdminDashboard activeTab={activeTab} overview={overview} refresh={refreshAdmin} onTab={selectTab} onAdminNameSaved={updateProfileDisplayName} />
             )}
           </div>
         </section>
@@ -375,15 +382,16 @@ function Detail({ label, value }: { label: string; value: string }) { return <di
 
 function EmptyState({ title, detail }: { title: string; detail: string }) { return <div className="grid min-h-56 place-items-center px-5 py-10 text-center"><div className="max-w-sm"><div className="mx-auto flex size-11 items-center justify-center rounded-[14px] bg-[#eaf1fa] text-[#245b9b]"><Users size={19}/></div><h3 className="mt-4 text-[14px] font-bold">{title}</h3><p className="mt-1.5 text-xs leading-5 text-[#60758b]">{detail}</p></div></div>; }
 
-function AdminDashboard({ activeTab, overview, refresh, onTab }: { activeTab: TabId; overview: AdminOverview | null; refresh: () => Promise<void>; onTab: (tab: TabId) => void }) {
+function AdminDashboard({ activeTab, overview, refresh, onTab, onAdminNameSaved }: { activeTab: TabId; overview: AdminOverview | null; refresh: () => Promise<void>; onTab: (tab: TabId) => void; onAdminNameSaved: (userId: string, displayName: string | null) => void }) {
   if (!overview) return <div className="grid min-h-64 place-items-center text-sm text-[#60758b]"><LoaderCircle className="mr-2 animate-spin" size={18}/>Carregando área administrativa…</div>;
   return <div>
     <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h1 className="mt-2 text-[29px] font-semibold tracking-[-.045em] sm:text-[34px]">{adminTabs.find((tab) => tab.id === activeTab)?.label}</h1><p className="mt-1.5 text-[13px] text-[#60758b]">Importe planilhas, revise UUIDs sem responsável e libere contas.</p></div><button onClick={() => void refresh()} className="h-11 w-fit rounded-lg border border-[#d4deeb] bg-white px-3.5 text-[13px] font-semibold text-[#536d70] hover:bg-[#f7faff]">Atualizar dados</button></div>
     {activeTab === "dashboard" && <AdminHome overview={overview} onTab={onTab}/>}
+    {activeTab === "referrals" && <AdminReferralsPanel influencers={overview.influencers}/>}
     {activeTab === "data-crazy" && <ImportPanel kind="data_crazy" title="Data Crazy" subtitle="Substitui a lista atual de indicados em uma operação atômica." overview={overview} refresh={refresh}/>}
     {activeTab === "performance" && <ImportPanel kind="performance" title="Performance" subtitle="Adiciona as corridas desta importação ao acumulado existente." overview={overview} refresh={refresh}/>}
     {activeTab === "reviews" && <ReviewsPanel overview={overview} refresh={refresh}/>}
-    {activeTab === "accounts" && <AccountsPanel overview={overview} refresh={refresh}/>}
+    {activeTab === "accounts" && <AccountsPanel overview={overview} refresh={refresh} onAdminNameSaved={onAdminNameSaved}/>}
     {activeTab === "imports" && <ImportHistoryPanel/>}
   </div>;
 }
@@ -391,7 +399,7 @@ function AdminDashboard({ activeTab, overview, refresh, onTab }: { activeTab: Ta
 function AdminHome({ overview, onTab }: { overview: AdminOverview; onTab: (tab: TabId) => void }) {
   const latest = overview.imports[0];
   return <><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Entregadores ativos" value={fmtNumber(overview.referralCount)} icon={<Users size={17}/>} sub="na lista atual do Data Crazy" color="teal"/><StatCard label="Corridas acumuladas" value={fmtNumber(overview.contributionTotal)} icon={<BarChart3 size={17}/>} sub="soma do histórico importado" color="blue"/><StatCard label="Atribuições em revisão" value={fmtNumber(overview.reviewCount ?? overview.reviews.length)} icon={<ClipboardList size={17}/>} sub="UUIDs aguardando responsável" color="gold"/><StatCard label="Contas vinculadas" value={fmtNumber(overview.members.length)} icon={<ShieldCheck size={17}/>} sub="administração e influenciadores" color="plum"/></div>
-    <div className="mt-7 grid gap-4 xl:grid-cols-[1.15fr_.85fr]"><section className="rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><div className="flex items-start justify-between"><div><h2 className="text-[15px] font-bold">Próximas ações</h2><p className="mt-1 text-[13px] text-[#63788e]">Importe novas bases ou resolva atribuições pendentes.</p></div></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><ActionCard icon={<CloudUpload size={17}/>} title="Atualizar indicados" text="Troque a lista atual com o novo arquivo Data Crazy." onClick={() => onTab("data-crazy")}/><ActionCard icon={<ArrowDownUp size={17}/>} title="Somar performance" text="Acrescente novas corridas ao acumulado da campanha." onClick={() => onTab("performance")}/><ActionCard icon={<ClipboardList size={17}/>} title={`Revisar atribuições · ${overview.reviewCount ?? overview.reviews.length}`} text="Resolva UUIDs sem um influenciador reconhecido." onClick={() => onTab("reviews")}/><ActionCard icon={<Users size={17}/>} title="Gerenciar acessos" text="Convide cada parceiro para sua própria conta." onClick={() => onTab("accounts")}/></div></section>
+    <div className="mt-7 grid gap-4 xl:grid-cols-[1.15fr_.85fr]"><section className="rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><div className="flex items-start justify-between"><div><h2 className="text-[15px] font-bold">Próximas ações</h2><p className="mt-1 text-[13px] text-[#63788e]">Importe novas bases ou resolva atribuições pendentes.</p></div></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><ActionCard icon={<Users size={17}/>} title="Consultar indicados" text="Acompanhe a base completa por influenciador." onClick={() => onTab("referrals")}/><ActionCard icon={<CloudUpload size={17}/>} title="Atualizar indicados" text="Troque a lista atual com o novo arquivo Data Crazy." onClick={() => onTab("data-crazy")}/><ActionCard icon={<ArrowDownUp size={17}/>} title="Somar performance" text="Acrescente novas corridas ao acumulado da campanha." onClick={() => onTab("performance")}/><ActionCard icon={<ClipboardList size={17}/>} title={`Revisar atribuições · ${overview.reviewCount ?? overview.reviews.length}`} text="Resolva UUIDs sem um influenciador reconhecido." onClick={() => onTab("reviews")}/><ActionCard icon={<Users size={17}/>} title="Gerenciar acessos" text="Convide cada parceiro para sua própria conta." onClick={() => onTab("accounts")}/></div></section>
       <section className="rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><div className="flex items-start justify-between gap-3"><div><h2 className="text-[15px] font-bold">Última importação</h2><p className="mt-1 text-[13px] text-[#63788e]">A carga mais recente entre todos os administradores.</p></div><button onClick={() => onTab("imports")} className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[12px] font-bold text-[#205b9e] hover:bg-[#f2f7fd] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc2]">Ver histórico<ArrowRight size={14}/></button></div>{latest ? <><div className="mt-6 inline-flex items-center gap-1.5 rounded-full bg-[#eaf2fc] px-2.5 py-1 text-xs font-bold text-[#277957]"><Check size={12}/>{latest.status === "completed" ? "Concluída" : latest.status}</div><div className="mt-3 truncate text-sm font-semibold text-[#29435e]">{latest.file_name}</div><div className="mt-1 text-[13px] text-[#60758b]">{latest.kind === "data_crazy" ? "Data Crazy" : "Performance"} · {new Date(latest.created_at).toLocaleString("pt-BR")}</div><div className="mt-4 border-t border-[#e6ebf2] pt-3 text-xs text-[#63788e]">{fmtNumber(latest.metrics?.total ?? 0)} registros na última carga</div></> : <p className="mt-7 rounded-xl bg-[#f7faff] px-4 py-5 text-xs leading-5 text-[#63788e]">Ainda não há importações. Os arquivos de exemplo foram usados apenas para validar o leitor; nenhum dado foi carregado.</p>}</section></div>
     <section className="mt-4 rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><div className="flex items-center justify-between"><div><h2 className="text-[15px] font-bold">Regras de premiação</h2><p className="mt-1 text-[13px] text-[#63788e]">Um prêmio por entregador ao alcançar a meta.</p></div><Gift size={18} className="text-[#b3822e]"/></div><div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{overview.influencers.map((item) => <div key={item.id} className="flex items-center justify-between rounded-xl bg-[#f7faff] px-3.5 py-3"><span className="text-xs font-semibold">{item.name}</span><span className="text-xs font-semibold text-[#60758b]">{item.route_goal} corridas <span className="mx-1 text-[#c0c9c7">·</span><strong className="text-[#205b9e]">{fmtMoney(item.prize_cents)}</strong></span></div>)}</div></section>
   </>;
@@ -646,7 +654,7 @@ function ReviewsPanel({ overview, refresh }: { overview: AdminOverview; refresh:
   </section>;
 }
 
-function AccountsPanel({ overview, refresh }: { overview: AdminOverview; refresh: () => Promise<void> }) {
+function AccountsPanel({ overview, refresh, onAdminNameSaved }: { overview: AdminOverview; refresh: () => Promise<void>; onAdminNameSaved: (userId: string, displayName: string | null) => void }) {
   const [email, setEmail] = useState(""); const [role, setRole] = useState<Role>("influencer"); const [influencerId, setInfluencerId] = useState(""); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [busy, setBusy] = useState(false);
   const [issued, setIssued] = useState<{ email: string; role: Role; code: string; expiresAt: string } | null>(null);
   const [revoking, setRevoking] = useState("");
@@ -672,6 +680,12 @@ function AccountsPanel({ overview, refresh }: { overview: AdminOverview; refresh
     catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível cancelar o convite."); }
     finally { setRevoking(""); }
   }
+  async function saveAdminName(userId: string, displayName: string | null) {
+    const result = await callAdminApi<{ userId: string; displayName: string | null }>("account-name-set", { userId, displayName });
+    onAdminNameSaved(userId, result.displayName);
+    void refresh().catch(() => undefined);
+    return result.displayName;
+  }
   return <div className="grid gap-4 xl:grid-cols-[minmax(0,.82fr)_minmax(0,1.18fr)]">
     <section className="rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6">
       <div className="flex size-10 items-center justify-center rounded-xl bg-[#eaf1fa] text-[#205b9e]"><Users size={18}/></div>
@@ -688,8 +702,130 @@ function AccountsPanel({ overview, refresh }: { overview: AdminOverview; refresh
     </section>
     <section className="overflow-hidden rounded-2xl border border-[#dfe6f0] bg-white">
       <div className="border-b border-[#e6ebf2] px-5 py-5 sm:px-6"><h2 className="text-[14px] font-bold">Contas vinculadas</h2><p className="mt-1 text-[13px] text-[#63788e]">Uma conta por influenciador.</p></div>
-      {overview.members.length===0?<div className="px-5 py-5 text-xs text-[#63788e]">Nenhuma conta foi ativada ainda.</div>:<div className="divide-y divide-[#e6ebf2]">{overview.members.map((member)=><div key={member.user_id} className="flex items-center gap-3 px-5 py-3.5 sm:px-6"><div className={`flex size-9 items-center justify-center rounded-[12px] ${member.role==="admin"?"bg-[#fff5df] text-[#a67520]":"bg-[#eaf1fa] text-[#245b9b]"}`}>{member.role==="admin"?<ShieldCheck size={16}/>:<Users size={16}/>}</div><div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold">{member.email}</div><div className="mt-0.5 text-xs text-[#60758b]">{member.role==="admin"?"Administrador":member.influencer_name??"Influenciador"}</div></div><span className="rounded-full bg-[#eaf2fc] px-2.5 py-1 text-xs font-bold text-[#205b9e]">Ativo</span></div>)}</div>}
+      {overview.members.length===0?<div className="px-5 py-5 text-xs text-[#63788e]">Nenhuma conta foi ativada ainda.</div>:<div className="divide-y divide-[#e6ebf2]">{overview.members.map((member)=><div key={member.user_id} className="flex items-start gap-3 px-5 py-4 sm:px-6"><div className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-[12px] ${member.role==="admin"?"bg-[#fff5df] text-[#a67520]":"bg-[#eaf1fa] text-[#245b9b]"}`}>{member.role==="admin"?<ShieldCheck size={16}/>:<Users size={16}/>}</div><div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold">{member.role === "admin" ? member.display_name || "Administrador" : member.influencer_name ?? "Influenciador"}</div><div className="mt-0.5 break-all text-xs text-[#60758b]">{member.email}</div>{member.role === "admin" && <AdminNameEditor member={member} onSave={saveAdminName}/>}</div><span className="mt-1 shrink-0 rounded-full bg-[#eaf2fc] px-2.5 py-1 text-xs font-bold text-[#205b9e]">Ativo</span></div>)}</div>}
       <div className="border-t border-[#e6ebf2] px-5 py-4 sm:px-6"><div className="text-xs font-bold uppercase tracking-[.1em] text-[#63788e]">Acessos aguardando ativação · {overview.invites.length}</div>{overview.invites.length===0?<p className="mt-2 text-xs text-[#74889b]">Nenhum acesso aguardando ativação.</p>:<div className="mt-2 divide-y divide-[#e6ebf2]">{overview.invites.map((invite)=><div key={invite.id} className="flex items-center gap-3 py-2.5"><div className="min-w-0 flex-1"><div className="truncate text-xs font-semibold">{invite.email}</div><div className="mt-0.5 text-xs text-[#74889b]">{invite.role === "admin" ? "Administrador" : invite.influencer_name ?? "Influenciador"} · aguardando primeiro acesso</div></div><button onClick={()=>void revoke(invite)} disabled={revoking===invite.id} className="min-h-11 px-2 text-[13px] font-semibold text-[#9a5c45] hover:underline disabled:opacity-50">{revoking===invite.id?"Cancelando…":"Cancelar"}</button></div>)}</div>}</div>
     </section>
+  </div>;
+}
+
+function AdminNameEditor({ member, onSave }: { member: Member; onSave: (userId: string, displayName: string | null) => Promise<string | null> }) {
+  const [value, setValue] = useState(member.display_name ?? "");
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => setValue(member.display_name ?? ""), [member.display_name]);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true); setFeedback(""); setError("");
+    try {
+      const displayName = await onSave(member.user_id, value.trim() || null);
+      setValue(displayName ?? "");
+      setFeedback(displayName ? "Nome salvo." : "Nome removido.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível salvar o nome.");
+    } finally { setBusy(false); }
+  }
+
+  return <div className="mt-2.5">
+    <form onSubmit={submit} className="flex max-w-[420px] gap-2">
+      <label className="sr-only" htmlFor={`admin-display-name-${member.user_id}`}>Nome para identificar esta conta administrativa</label>
+      <input id={`admin-display-name-${member.user_id}`} value={value} onChange={(event) => setValue(event.target.value)} maxLength={80} placeholder="Nome para identificar esta conta" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d4deeb] px-3 text-xs outline-none focus:border-[#2b6cbb] focus:ring-2 focus:ring-[#d7e8fa]" />
+      <button type="submit" disabled={busy || value.trim() === (member.display_name ?? "")} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-[#b9d3f0] bg-[#f7faff] px-3 text-xs font-bold text-[#205b9e] hover:bg-[#eaf2fc] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc2] disabled:cursor-not-allowed disabled:opacity-50">{busy ? <LoaderCircle size={13} className="animate-spin"/> : null}{busy ? "Salvando…" : "Salvar nome"}</button>
+    </form>
+    {feedback && <p role="status" className="mt-1.5 text-xs text-[#2c7558]">{feedback}</p>}
+    {error && <p role="alert" className="mt-1.5 text-xs text-[#a94b37]">{error}</p>}
+  </div>;
+}
+
+function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
+  const pageSize = 50;
+  const [filterId, setFilterId] = useState("all");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [result, setResult] = useState<AdminReferralsResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const timeout = window.setTimeout(async () => {
+      setLoading(true); setError("");
+      try {
+        const pageResult = await callAdminApi<AdminReferralsResult>("admin-referrals", {
+          limit: pageSize,
+          offset: page * pageSize,
+          influencerId: filterId,
+          search: search.trim(),
+        });
+        if (!cancelled) setResult(pageResult);
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Não foi possível carregar os indicados.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }, search.trim() ? 250 : 0);
+    return () => { cancelled = true; window.clearTimeout(timeout); };
+  }, [filterId, page, refreshKey, search]);
+
+  const firstItem = result && result.total > 0 ? page * pageSize + 1 : 0;
+  const lastItem = result ? Math.min((page + 1) * pageSize, result.total) : 0;
+
+  function changeFilter(value: string) {
+    setFilterId(value);
+    setPage(0);
+  }
+
+  function changeSearch(value: string) {
+    setSearch(value);
+    setPage(0);
+  }
+
+  return <div className="space-y-4">
+    <section className="rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+        <div><h2 className="text-[18px] font-bold tracking-[-.02em]">Todos os indicados</h2><p className="mt-1 text-[13px] text-[#60758b]">Consulte os entregadores, corridas e metas de cada influenciador.</p></div>
+        <button type="button" onClick={() => setRefreshKey((value) => value + 1)} disabled={loading} className="inline-flex h-11 w-fit items-center gap-2 rounded-lg border border-[#d4deeb] bg-white px-3.5 text-[13px] font-semibold text-[#536d70] hover:bg-[#f7faff] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc2] disabled:opacity-55"><History size={15}/>{loading ? "Atualizando…" : "Atualizar lista"}</button>
+      </div>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Indicados no filtro" value={fmtNumber(result?.total ?? 0)} icon={<Users size={17}/>} sub="entregadores atribuídos" color="teal"/>
+        <StatCard label="Corridas acumuladas" value={fmtNumber(result?.totalRoutes ?? 0)} icon={<BarChart3 size={17}/>} sub="somadas por UUID" color="blue"/>
+        <StatCard label="Prêmios liberados" value={fmtNumber(result?.unlockedCount ?? 0)} icon={<CheckCircle2 size={17}/>} sub="um por entregador ao atingir a meta" color="gold"/>
+        <StatCard label="Valor dos prêmios" value={fmtMoney(result?.unlockedPrizeCents ?? 0)} icon={<Award size={17}/>} sub="total liberado, sem controle de pagamento" color="plum"/>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_240px]">
+        <label className="relative block text-xs font-semibold text-[#63788e]"><span className="sr-only">Buscar indicado</span><Search size={16} className="pointer-events-none absolute left-3 top-[13px] text-[#8091a4]"/><input type="search" value={search} onChange={(event) => changeSearch(event.target.value)} placeholder="Buscar nome, UUID, telefone ou CPF" className="h-11 w-full rounded-lg border border-[#d4deeb] bg-white pl-9 pr-3 text-[13px] font-medium text-[#29435e] outline-none focus:border-[#2f6fc2] focus:ring-2 focus:ring-[#d7e8fa]" /></label>
+        <label className="flex flex-col gap-1 text-xs font-semibold text-[#63788e]">Influenciador<select value={filterId} onChange={(event) => changeFilter(event.target.value)} className="h-11 rounded-lg border border-[#d4deeb] bg-white px-3 text-[13px] font-medium text-[#29435e] outline-none focus:border-[#2f6fc2] focus:ring-2 focus:ring-[#d7e8fa]"><option value="all">Todos os influenciadores</option>{influencers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      </div>
+    </section>
+
+    {error && <p role="alert" className="rounded-xl bg-[#fff3ef] px-4 py-3 text-[13px] text-[#a94b37]">{error}</p>}
+    {loading && !result ? <div className="grid min-h-56 place-items-center rounded-xl border border-[#dfe6f0] bg-white text-sm text-[#60758b]"><LoaderCircle className="mr-2 animate-spin" size={18}/>Carregando indicados…</div> : result?.items.length === 0 ? <div className="rounded-xl border border-[#dfe6f0] bg-white"><EmptyState title="Nenhum indicado encontrado" detail={search || filterId !== "all" ? "Ajuste o filtro ou a busca para ver outros resultados." : "Os indicados atribuídos aparecerão depois da importação do Data Crazy."}/></div> : result ? <>
+      <div className="overflow-hidden rounded-xl border border-[#dfe6f0] bg-white md:hidden" aria-busy={loading}>
+        <div className="divide-y divide-[#e6ebf2]">{result.items.map((item) => {
+          const progress = Math.min(100, Math.round(Number(item.routes) / item.route_goal * 100));
+          return <article key={item.uuid} className="p-4">
+            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="break-words text-[13px] font-bold text-[#203b58]">{item.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-[#8191a2]">UUID · {item.uuid}</div></div><span className="shrink-0 rounded-full bg-[#eaf1fa] px-2.5 py-1 text-xs font-bold text-[#205b9e]">{item.influencer_name}</span></div>
+            <div className="mt-3 text-xs text-[#405b76]">{item.region || "Região não informada"}</div>
+            <div className="mt-1 break-words text-xs text-[#60758b]">Telefone · {item.phone || "indisponível"}<span className="px-1.5 text-[#bdc8d4]">·</span>CPF · {item.cpf || "indisponível"}</div>
+            <div className="mt-3"><div className="flex items-center justify-between gap-3 text-xs"><span className="font-semibold tabular-nums text-[#29435e]">{fmtNumber(Number(item.routes))} / {fmtNumber(item.route_goal)} corridas</span><span className="font-bold tabular-nums text-[#205b9e]">{progress}%</span></div><div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e8eef7]"><div className="h-full rounded-full bg-[#2f6fc2]" style={{ width: `${progress}%` }}/></div></div>
+            <div className="mt-3 flex items-center justify-between gap-2"><span className={`text-xs font-bold ${item.prize_unlocked ? "text-[#267353]" : "text-[#60758b]"}`}>{item.prize_unlocked ? "Prêmio liberado" : `Faltam ${fmtNumber(item.routes_remaining)} corridas`}</span><span className="text-xs font-bold text-[#29435e]">{fmtMoney(item.prize_cents)}</span></div>
+          </article>;
+        })}</div>
+      </div>
+
+      <div className="hidden overflow-hidden rounded-xl border border-[#dfe6f0] bg-white md:block" aria-busy={loading}>
+        <div className="overflow-x-auto"><table className="w-full min-w-[1040px] border-collapse text-left">
+          <thead className="bg-[#f7faff] text-xs font-bold uppercase tracking-[.08em] text-[#71859b]"><tr><th className="px-4 py-3">Entregador</th><th className="px-4 py-3">Influenciador</th><th className="px-4 py-3">Contato</th><th className="px-4 py-3">Corridas e progresso</th><th className="px-4 py-3">Prêmio</th></tr></thead>
+          <tbody className="divide-y divide-[#edf1f6]">{result.items.map((item) => {
+            const progress = Math.min(100, Math.round(Number(item.routes) / item.route_goal * 100));
+            return <tr key={item.uuid} className="align-top hover:bg-[#fbfcfe]"><td className="max-w-[250px] px-4 py-3.5"><div className="text-[13px] font-semibold text-[#203b58]">{item.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-[#8191a2]">{item.uuid}</div><div className="mt-1 text-xs text-[#60758b]">{item.region || "Região não informada"}</div></td><td className="px-4 py-3.5 text-xs font-semibold text-[#405b76]">{item.influencer_name}</td><td className="px-4 py-3.5 text-xs leading-5 text-[#536c84]">{item.phone || "Telefone indisponível"}<div>{item.cpf ? `CPF ${item.cpf}` : "CPF indisponível"}</div></td><td className="w-[240px] px-4 py-3.5"><div className="flex justify-between gap-3 text-xs"><span className="font-semibold tabular-nums text-[#29435e]">{fmtNumber(Number(item.routes))} / {fmtNumber(item.route_goal)}</span><span className="font-bold tabular-nums text-[#205b9e]">{progress}%</span></div><div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e8eef7]"><div className="h-full rounded-full bg-[#2f6fc2]" style={{ width: `${progress}%` }}/></div><div className="mt-1 text-xs text-[#60758b]">{item.prize_unlocked ? "Meta atingida" : `Faltam ${fmtNumber(item.routes_remaining)} corridas`}</div></td><td className="px-4 py-3.5"><div className="text-xs font-bold text-[#29435e]">{fmtMoney(item.prize_cents)}</div><div className={`mt-1 text-xs font-semibold ${item.prize_unlocked ? "text-[#267353]" : "text-[#8191a2]"}`}>{item.prize_unlocked ? "Liberado" : "Em progresso"}</div></td></tr>;
+          })}</tbody>
+        </table></div>
+      </div>
+      <div className="flex flex-col justify-between gap-3 text-xs text-[#60758b] sm:flex-row sm:items-center"><span>{loading ? "Atualizando resultados… · " : ""}{fmtNumber(firstItem)}–{fmtNumber(lastItem)} de {fmtNumber(result.total)} indicados</span><div className="flex gap-2"><button type="button" onClick={() => setPage((value) => Math.max(0, value - 1))} disabled={page === 0 || loading} className="min-h-10 rounded-lg border border-[#d4deeb] bg-white px-3 font-semibold text-[#536d70] hover:bg-[#f7faff] disabled:cursor-not-allowed disabled:opacity-50">Anterior</button><button type="button" onClick={() => setPage((value) => value + 1)} disabled={(page + 1) * pageSize >= result.total || loading} className="min-h-10 rounded-lg border border-[#d4deeb] bg-white px-3 font-semibold text-[#536d70] hover:bg-[#f7faff] disabled:cursor-not-allowed disabled:opacity-50">Próxima</button></div></div>
+    </> : null}
   </div>;
 }
