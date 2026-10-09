@@ -33,7 +33,7 @@ type Referral = {
 type ImportSummary = { id: string; kind: string; file_name: string; status: string; created_at: string; metrics: Record<string, number> };
 type Review = { id: string; uuid: string; name: string; region: string | null; raw_influencer: string; status: string };
 type Member = { user_id: string; email: string; role: Role; influencer_id: string | null; influencer_name: string | null };
-type PendingInvite = { id: string; email: string; influencer_name: string | null; created_at: string };
+type PendingInvite = { id: string; email: string; role: Role; influencer_name: string | null; created_at: string };
 type AdminOverview = { influencers: Influencer[]; availableInfluencers: Influencer[]; imports: ImportSummary[]; reviews: Review[]; reviewCount: number; members: Member[]; invites: PendingInvite[]; referralCount: number; contributionTotal: number };
 type TabId = "dashboard" | "data-crazy" | "performance" | "reviews" | "accounts";
 
@@ -490,16 +490,20 @@ function ReviewsPanel({ overview, refresh }: { overview: AdminOverview; refresh:
 }
 
 function AccountsPanel({ overview, refresh }: { overview: AdminOverview; refresh: () => Promise<void> }) {
-  const [email, setEmail] = useState(""); const [influencerId, setInfluencerId] = useState(""); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [busy, setBusy] = useState(false);
-  const [issued, setIssued] = useState<{ email: string; code: string; expiresAt: string } | null>(null);
+  const [email, setEmail] = useState(""); const [role, setRole] = useState<Role>("influencer"); const [influencerId, setInfluencerId] = useState(""); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [busy, setBusy] = useState(false);
+  const [issued, setIssued] = useState<{ email: string; role: Role; code: string; expiresAt: string } | null>(null);
   const [revoking, setRevoking] = useState("");
   async function invite(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError(""); setNotice(""); setIssued(null);
     try {
       const invitedEmail = email.trim().toLowerCase();
-      const result = await callAccessApi<{ code: string; expiresAt: string } >({ action: "issue", email: invitedEmail, influencerId });
-      setIssued({ email: invitedEmail, code: result.code, expiresAt: result.expiresAt });
-      setNotice("Acesso preparado. Envie o código ao influenciador por um canal de confiança.");
+      const result = await callAccessApi<{ code: string; expiresAt: string }>({
+        action: role === "admin" ? "issue-admin" : "issue",
+        email: invitedEmail,
+        ...(role === "influencer" ? { influencerId } : {}),
+      });
+      setIssued({ email: invitedEmail, role, code: result.code, expiresAt: result.expiresAt });
+      setNotice(role === "admin" ? "Convite de administrador preparado." : "Acesso preparado para o influenciador.");
       setEmail(""); await refresh();
     }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível liberar este acesso."); }
@@ -518,16 +522,17 @@ function AccountsPanel({ overview, refresh }: { overview: AdminOverview; refresh
       <p className="mt-1 text-[13px] leading-5 text-[#63788e]">Escolha o e-mail e gere um código de uso único. A pessoa cria a senha no primeiro acesso, sem confirmação por e-mail.</p>
       <form onSubmit={invite} className="mt-5 space-y-3">
         <label className="block text-xs font-bold text-[#405b75]">E-mail do acesso<input type="email" required value={email} onChange={(event)=>setEmail(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-[#d4deeb] px-3 text-xs outline-none focus:border-[#2b6cbb]" placeholder="parceiro@email.com"/></label>
-        <label className="block text-xs font-bold text-[#405b75]">Influenciador<select required value={influencerId} onChange={(event)=>setInfluencerId(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-[#d4deeb] bg-white px-3 text-xs outline-none focus:border-[#2b6cbb]"><option value="">Selecione</option>{overview.availableInfluencers.map((item)=><option key={item.id} value={item.id}>{item.name}{item.is_demo ? " · demonstração" : ""}</option>)}</select></label>
+        <label className="block text-xs font-bold text-[#405b75]">Perfil de acesso<select value={role} onChange={(event)=>{const nextRole=event.target.value as Role;setRole(nextRole);if(nextRole==="admin")setInfluencerId("");}} className="mt-1.5 h-11 w-full rounded-lg border border-[#d4deeb] bg-white px-3 text-sm outline-none focus:border-[#2b6cbb]"><option value="influencer">Influenciador</option><option value="admin">Administrador</option></select></label>
+        {role === "influencer" ? <label className="block text-xs font-bold text-[#405b75]">Influenciador<select required value={influencerId} onChange={(event)=>setInfluencerId(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-[#d4deeb] bg-white px-3 text-xs outline-none focus:border-[#2b6cbb]"><option value="">Selecione</option>{overview.availableInfluencers.map((item)=><option key={item.id} value={item.id}>{item.name}{item.is_demo ? " · demonstração" : ""}</option>)}</select></label> : <p className="rounded-lg bg-[#fff9e9] px-3 py-2.5 text-xs leading-5 text-[#785b1d]">Administradores podem importar planilhas, revisar atribuições e liberar outros acessos.</p>}
         {error&&<p className="rounded-lg bg-[#fff3ef] p-2.5 text-xs text-[#a94b37]">{error}</p>}{notice&&<p className="rounded-lg bg-[#eaf2fc] p-2.5 text-xs text-[#205b9e]">{notice}</p>}
-        <button disabled={busy} className="flex h-11 items-center gap-2 rounded-lg bg-[#185aa9] px-3.5 text-[13px] font-bold text-white hover:bg-[#114886] disabled:opacity-55">{busy?<LoaderCircle size={14} className="animate-spin"/>:<Mail size={14}/>}Gerar código de acesso</button>
+        <button disabled={busy} className="flex h-11 items-center gap-2 rounded-lg bg-[#185aa9] px-3.5 text-[13px] font-bold text-white hover:bg-[#114886] disabled:opacity-55">{busy?<LoaderCircle size={14} className="animate-spin"/>:<Mail size={14}/>}Gerar código de {role === "admin" ? "administrador" : "acesso"}</button>
       </form>
-      {issued && <div className="mt-5 rounded-lg border border-[#b9d3f0] bg-[#f7faff] p-4"><p className="text-sm font-semibold text-[#173b67]">Código para {issued.email}</p><p className="mt-1 text-[13px] leading-5 text-[#526981]">Mostrado apenas agora. Válido até {new Date(issued.expiresAt).toLocaleString("pt-BR")}. Envie por um canal de confiança.</p><code className="mt-3 block break-all rounded-md bg-white p-3 text-[13px] text-[#193b63]">{issued.code}</code><button type="button" onClick={() => void navigator.clipboard.writeText(issued.code).then(() => setNotice("Código copiado.")).catch(() => setError("Não foi possível copiar. Selecione o código acima."))} className="mt-3 min-h-11 rounded-lg border border-[#b9d3f0] bg-white px-4 text-sm font-semibold text-[#205b9e]">Copiar código</button></div>}
+      {issued && <div className="mt-5 rounded-lg border border-[#b9d3f0] bg-[#f7faff] p-4"><p className="text-sm font-semibold text-[#173b67]">Código de {issued.role === "admin" ? "administrador" : "influenciador"} para {issued.email}</p><p className="mt-1 text-[13px] leading-5 text-[#526981]">Mostrado apenas agora. Válido até {new Date(issued.expiresAt).toLocaleString("pt-BR")}. Envie por um canal de confiança.</p><code className="mt-3 block break-all rounded-md bg-white p-3 text-[13px] text-[#193b63]">{issued.code}</code><button type="button" onClick={() => void navigator.clipboard.writeText(issued.code).then(() => setNotice("Código copiado.")).catch(() => setError("Não foi possível copiar. Selecione o código acima."))} className="mt-3 min-h-11 rounded-lg border border-[#b9d3f0] bg-white px-4 text-sm font-semibold text-[#205b9e]">Copiar código</button></div>}
     </section>
     <section className="overflow-hidden rounded-2xl border border-[#dfe6f0] bg-white">
       <div className="border-b border-[#e6ebf2] px-5 py-5 sm:px-6"><h2 className="text-[14px] font-bold">Contas vinculadas</h2><p className="mt-1 text-[13px] text-[#63788e]">Uma conta por influenciador.</p></div>
       {overview.members.length===0?<div className="px-5 py-5 text-xs text-[#63788e]">Nenhuma conta foi ativada ainda.</div>:<div className="divide-y divide-[#e6ebf2]">{overview.members.map((member)=><div key={member.user_id} className="flex items-center gap-3 px-5 py-3.5 sm:px-6"><div className={`flex size-9 items-center justify-center rounded-[12px] ${member.role==="admin"?"bg-[#fff5df] text-[#a67520]":"bg-[#eaf1fa] text-[#245b9b]"}`}>{member.role==="admin"?<ShieldCheck size={16}/>:<Users size={16}/>}</div><div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold">{member.email}</div><div className="mt-0.5 text-xs text-[#60758b]">{member.role==="admin"?"Administrador":member.influencer_name??"Influenciador"}</div></div><span className="rounded-full bg-[#eaf2fc] px-2.5 py-1 text-xs font-bold text-[#205b9e]">Ativo</span></div>)}</div>}
-      <div className="border-t border-[#e6ebf2] px-5 py-4 sm:px-6"><div className="text-xs font-bold uppercase tracking-[.1em] text-[#63788e]">E-mails liberados · {overview.invites.length}</div>{overview.invites.length===0?<p className="mt-2 text-xs text-[#74889b]">Nenhum acesso aguardando ativação.</p>:<div className="mt-2 divide-y divide-[#e6ebf2]">{overview.invites.map((invite)=><div key={invite.id} className="flex items-center gap-3 py-2.5"><div className="min-w-0 flex-1"><div className="truncate text-xs font-semibold">{invite.email}</div><div className="mt-0.5 text-xs text-[#74889b]">{invite.influencer_name??"Influenciador"} · aguardando primeiro acesso</div></div><button onClick={()=>void revoke(invite)} disabled={revoking===invite.id} className="min-h-11 px-2 text-[13px] font-semibold text-[#9a5c45] hover:underline disabled:opacity-50">{revoking===invite.id?"Cancelando…":"Cancelar"}</button></div>)}</div>}</div>
+      <div className="border-t border-[#e6ebf2] px-5 py-4 sm:px-6"><div className="text-xs font-bold uppercase tracking-[.1em] text-[#63788e]">Acessos aguardando ativação · {overview.invites.length}</div>{overview.invites.length===0?<p className="mt-2 text-xs text-[#74889b]">Nenhum acesso aguardando ativação.</p>:<div className="mt-2 divide-y divide-[#e6ebf2]">{overview.invites.map((invite)=><div key={invite.id} className="flex items-center gap-3 py-2.5"><div className="min-w-0 flex-1"><div className="truncate text-xs font-semibold">{invite.email}</div><div className="mt-0.5 text-xs text-[#74889b]">{invite.role === "admin" ? "Administrador" : invite.influencer_name ?? "Influenciador"} · aguardando primeiro acesso</div></div><button onClick={()=>void revoke(invite)} disabled={revoking===invite.id} className="min-h-11 px-2 text-[13px] font-semibold text-[#9a5c45] hover:underline disabled:opacity-50">{revoking===invite.id?"Cancelando…":"Cancelar"}</button></div>)}</div>}</div>
     </section>
   </div>;
 }

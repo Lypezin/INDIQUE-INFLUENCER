@@ -160,9 +160,10 @@ async function issueInvite(
   env: NonNullable<ReturnType<typeof getEnvironment>>,
 ): Promise<Response> {
   const email = normalizeEmail(body.email);
+  const adminInvite = body.action === "issue-admin";
   const influencerId = typeof body.influencerId === "string" ? body.influencerId : "";
-  if (!email || !influencerId) {
-    return respond(origin, { error: "Informe um e-mail e um influenciador válidos." }, 400);
+  if (!email || (!adminInvite && !influencerId)) {
+    return respond(origin, { error: adminInvite ? "Informe um e-mail válido." : "Informe um e-mail e um influenciador válidos." }, 400);
   }
 
   const authenticated = await authenticatedUser(request, env.url, env.publishableKey);
@@ -179,14 +180,18 @@ async function issueInvite(
 
   const code = randomCode();
   const expiresAt = new Date(Date.now() + INVITE_LIFETIME_HOURS * 60 * 60 * 1000).toISOString();
-  const { data, error } = await authenticated.client
-    .schema(DATA_SCHEMA)
-    .rpc("issue_account_activation_invite", {
-      p_email: email,
-      p_influencer_id: influencerId,
-      p_token_hash: await hashCode(code),
-      p_expires_at: expiresAt,
-    });
+  const { data, error } = adminInvite
+    ? await authenticated.client.schema(DATA_SCHEMA).rpc("issue_admin_activation_invite", {
+        p_email: email,
+        p_token_hash: await hashCode(code),
+        p_expires_at: expiresAt,
+      })
+    : await authenticated.client.schema(DATA_SCHEMA).rpc("issue_account_activation_invite", {
+        p_email: email,
+        p_influencer_id: influencerId,
+        p_token_hash: await hashCode(code),
+        p_expires_at: expiresAt,
+      });
   if (error || !data?.invite_id) {
     return respond(origin, { error: error?.message ?? "Não foi possível criar o convite." }, 400);
   }
@@ -305,7 +310,7 @@ Deno.serve(async (request: Request) => {
   if (!env) return respond(origin, { error: "A função ainda não está configurada." }, 503);
 
   try {
-    if (body.action === "issue") return await issueInvite(request, body, origin, env);
+    if (body.action === "issue" || body.action === "issue-admin") return await issueInvite(request, body, origin, env);
     if (body.action === "activate") return await activateNewAccount(body, origin, env);
     if (body.action === "claim") return await claimExistingAccount(request, body, origin, env);
     return respond(origin, { error: "Ação inválida." }, 400);
