@@ -138,7 +138,9 @@ export default function Home() {
 
   useEffect(() => {
     try {
-      const savedTheme = window.localStorage.getItem("indique-ganhe:theme");
+      const savedTheme = window.localStorage.getItem("indique-ganhe:theme:v2");
+      // Read the saved preference after hydration to keep the server-rendered theme deterministic.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (savedTheme === "light" || savedTheme === "dark") setTheme(savedTheme);
     }
     catch { /* Theme preference is optional when browser storage is unavailable. */ }
@@ -147,7 +149,7 @@ export default function Home() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.colorScheme = theme;
-    try { window.localStorage.setItem("indique-ganhe:theme", theme); }
+    try { window.localStorage.setItem("indique-ganhe:theme:v2", theme); }
     catch { /* The current theme still works when browser storage is unavailable. */ }
   }, [theme]);
 
@@ -294,7 +296,7 @@ export default function Home() {
           <header className="portal-topbar sticky top-0 z-20 flex h-[76px] items-center justify-between gap-2 border-b border-border bg-white px-3 sm:px-8 lg:px-10">
             <div className="flex min-w-0 items-center gap-2 sm:gap-3">
               {isAdmin && <button ref={mobileMenuButtonRef} onClick={() => setMobileMenu(!mobileMenu)} className="flex size-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-subtle lg:hidden" aria-label={mobileMenu ? "Fechar menu" : "Abrir menu"} aria-expanded={mobileMenu} aria-controls="admin-mobile-navigation"><Menu size={21} aria-hidden="true" /></button>}
-              <div className="min-w-0"><div className="truncate text-sm font-semibold sm:text-base">{title}</div><div className="mt-0.5 hidden text-xs text-[#7a8b8e] sm:block">{subtitle}</div></div>
+              <div className={`min-w-0 ${isAdmin && activeTab === "data-crazy" ? "hidden" : ""}`}><div className="truncate text-sm font-semibold sm:text-base">{title}</div><div className="mt-0.5 hidden text-xs text-[#7a8b8e] sm:block">{subtitle}</div></div>
             </div>
             <div className="flex shrink-0 items-center gap-1 sm:gap-3">
               <div className="hidden text-right sm:block"><div className="text-xs font-semibold">{isAdmin ? profile.display_name || "Administrador" : influencer?.name}</div><div className="mt-0.5 max-w-44 truncate text-sm text-[#87979a]">{profile.email}</div></div>
@@ -597,69 +599,67 @@ function DataCrazySyncPanel({ overview, refresh, refreshVersion, onTab }: { over
   const latestPerformance = imports.find((item) => item.kind === "performance" && item.status === "completed") ?? null;
   const dataCrazyUpdatedAt = run?.status === "completed" && run.completedAt ? run.completedAt : latestDataCrazy?.created_at ?? null;
   const reviewCount = overview.reviewCount ?? overview.reviews.length;
+  const runMetrics = Object.entries(run?.metrics ?? {}).filter(([key]) =>
+    !(key === "businessesReceived" && typeof run?.metrics.businesses === "number") &&
+    !(key === "leadsReceived" && typeof run?.metrics.leads === "number"),
+  );
 
   return <div className="dc-workspace">
-    <section className="dc-sync-card portal-panel" aria-labelledby="dc-sync-title">
-      <div className="dc-sync-topline">
-        <div className="dc-sync-copy">
-          <div className="dc-sync-icon" aria-hidden="true"><CloudUpload size={19}/></div>
-          <div className="min-w-0">
-            <div className="dc-eyebrow">Coleta da base</div>
-            <h2 id="dc-sync-title" className="dc-sync-title">Sincronização Data Crazy</h2>
-            <p className="dc-sync-description">Valide os dados da API e publique a lista atualizada de entregadores.</p>
-          </div>
-        </div>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <button type="button" disabled={loading || starting || run?.status === "running"} className="dc-sync-button">{starting ? <LoaderCircle size={16} className="animate-spin"/> : <RefreshCw size={16}/>}Sincronizar agora</button>
-          </AlertDialogTrigger>
-          <AlertDialogContent className="border-border bg-card">
-            <AlertDialogHeader>
-              <AlertDialogMedia className="bg-status-warning-surface text-status-warning"><CircleAlert size={22}/></AlertDialogMedia>
-              <AlertDialogTitle>Iniciar coleta completa?</AlertDialogTitle>
-              <AlertDialogDescription>A coleta será validada antes da publicação. Quando estiver pronta, ela substituirá a lista publicada atual do Data Crazy.</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel className="min-h-11">Voltar</AlertDialogCancel>
-              <AlertDialogAction onClick={() => void startSync()} className="min-h-11">Iniciar sincronização</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
-
-      {error && <p role="alert" className="dc-inline-alert">{error}</p>}
-      {loading ? <div role="status" className="dc-sync-loading"><LoaderCircle size={16} className="animate-spin"/>Consultando a última sincronização…</div> : !run ? <div className="dc-run-summary"><span className="dc-run-dot is-idle"/><div><p className="dc-run-title">Nenhuma sincronização registrada</p><p className="dc-run-copy">A primeira coleta pode ser iniciada pelo botão acima.</p></div></div> : <div className="dc-run-summary" aria-live="polite">
-        <span className={`dc-run-dot ${run.status === "completed" ? "is-success" : run.status === "failed" ? "is-danger" : "is-running"}`} aria-hidden="true"/>
-        <div className="min-w-0 flex-1">
-          <div className="dc-run-heading"><p className="dc-run-title">{run.status === "running" ? syncPhaseLabels[run.phase] ?? "Processando dados" : `Última coleta ${statusLabel.toLocaleLowerCase("pt-BR")}`}{monthLabel}</p><span className={`dc-status-pill ${run.status}`}>{run.status === "running" && <LoaderCircle size={13} className="animate-spin"/>}{run.status === "completed" && <CheckCircle2 size={13} />}{run.status === "failed" && <CircleAlert size={13} />}{statusLabel}</span></div>
-          <p className="dc-run-copy">Iniciada em {formatImportTime(run.startedAt)}{run.completedAt ? ` · finalizada em ${formatImportTime(run.completedAt)}` : ""}</p>
-          <div className="dc-run-progress-line"><span>{run.status === "running" ? `${fmtNumber(run.processed)}${run.total > 0 ? ` de ${fmtNumber(run.total)}` : ""} registros` : run.status === "completed" ? "Base validada e publicada" : "A lista publicada anterior foi preservada"}</span>{run.status === "running" && progress !== null && <span className="tabular-nums">{progress}%</span>}</div>
-          {run.status === "running" && <div className="route-meter dc-run-progress" role="progressbar" aria-label="Andamento da sincronização" aria-valuenow={progress ?? undefined} aria-valuemin={0} aria-valuemax={100}><div className="route-meter-fill" style={{ transform: `scaleX(${(progress ?? 8) / 100})` }}/></div>}
-          {run.errorMessage && <p role="alert" className="dc-inline-alert">{run.errorMessage}</p>}
-          {Object.keys(run.metrics ?? {}).length > 0 && <dl className="dc-run-metrics">{Object.entries(run.metrics).filter(([key, value]) => typeof value === "number" && !(key === "businessesReceived" && typeof run.metrics.businesses === "number") && !(key === "leadsReceived" && typeof run.metrics.leads === "number")).map(([key, value]) => <div key={key}><dt>{importMetricLabels[key] ?? key.replace(/([A-Z])/g, " $1")}</dt><dd>{fmtNumber(value)}</dd></div>)}</dl>}
-        </div>
-      </div>}
+    <section className="dc-page-heading" aria-labelledby="dc-page-title">
+      <div className="dc-page-copy"><h1 id="dc-page-title">Data Crazy</h1><p>Acompanhe o cruzamento com a Performance e revise as atividades registradas.</p></div>
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <button type="button" disabled={loading || starting || run?.status === "running"} className="dc-sync-button">{starting ? <LoaderCircle size={16} className="animate-spin"/> : <RefreshCw size={16}/>}Sincronizar agora</button>
+        </AlertDialogTrigger>
+        <AlertDialogContent className="border-border bg-card">
+          <AlertDialogHeader>
+            <AlertDialogMedia className="bg-status-warning-surface text-status-warning"><CircleAlert size={22}/></AlertDialogMedia>
+            <AlertDialogTitle>Iniciar coleta completa?</AlertDialogTitle>
+            <AlertDialogDescription>A coleta será validada antes da publicação. Quando estiver pronta, ela substituirá a lista publicada atual do Data Crazy.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="min-h-11">Voltar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void startSync()} className="min-h-11">Iniciar sincronização</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
+
+    {error && <p role="alert" className="dc-inline-alert">{error}</p>}
+    {(loading || run?.status === "running" || run?.status === "failed") && <section className="dc-run-status" aria-label="Estado da última sincronização" aria-live="polite">
+      {loading ? <div className="dc-run-status-line"><LoaderCircle size={15} className="animate-spin"/><span>Consultando a última sincronização…</span></div> : run && <>
+        <span className={`dc-run-dot ${run.status === "completed" ? "is-success" : run.status === "failed" ? "is-danger" : "is-running"}`} aria-hidden="true"/>
+        <div className="dc-run-status-copy"><strong>{run.status === "running" ? syncPhaseLabels[run.phase] ?? "Processando dados" : `Última coleta ${statusLabel.toLocaleLowerCase("pt-BR")}`}{monthLabel}</strong><span>{run.status === "running" ? `${fmtNumber(run.processed)}${run.total > 0 ? ` de ${fmtNumber(run.total)}` : ""} registros` : `Finalizada em ${formatImportTime(run.completedAt ?? run.startedAt)}`}</span></div>
+        <span className={`dc-status-pill ${run.status}`}>{run.status === "running" && <LoaderCircle size={13} className="animate-spin"/>}{run.status === "completed" && <CheckCircle2 size={13} />}{run.status === "failed" && <CircleAlert size={13} />}{statusLabel}</span>
+        {run.status === "running" && progress !== null && <span className="dc-run-progress-value">{progress}%</span>}
+        {run.status === "running" && <div className="route-meter dc-run-progress" role="progressbar" aria-label="Andamento da sincronização" aria-valuenow={progress ?? undefined} aria-valuemin={0} aria-valuemax={100}><div className="route-meter-fill" style={{ transform: `scaleX(${(progress ?? 8) / 100})` }}/></div>}
+        {run.errorMessage && <span role="alert" className="dc-run-error">{run.errorMessage}</span>}
+      </>}
+    </section>}
 
     <section className="dc-source-strip" aria-label="Resumo das fontes de dados">
       <article className="dc-source-card">
-        <span className="dc-source-icon dc-source-icon-blue"><FileSpreadsheet size={18}/></span>
-        <div className="min-w-0 flex-1"><div className="dc-eyebrow">Base publicada</div><h3>Data Crazy</h3><div className="dc-source-value">{fmtNumber(overview.referralCount)}</div><p>entregadores atribuídos</p><div className="dc-source-updated">{run?.status === "running" ? "Sincronização em andamento" : dataCrazyUpdatedAt ? `Atualizada em ${formatImportTime(dataCrazyUpdatedAt)}` : "Aguardando a primeira coleta"}</div></div>
+        <span className="dc-source-icon dc-source-icon-blue" aria-hidden="true"><FileSpreadsheet size={18}/></span>
+        <div className="dc-source-copy"><h2>Data Crazy</h2><p>Base publicada</p><span className="dc-source-updated">{run?.status === "running" ? "Sincronização em andamento" : dataCrazyUpdatedAt ? `Atualizada em ${formatImportTime(dataCrazyUpdatedAt)}` : "Aguardando a primeira coleta"}</span></div>
+        <div className="dc-source-metric"><strong>{fmtNumber(overview.referralCount)}</strong><span>entregadores</span></div>
       </article>
       <article className="dc-source-card">
-        <span className="dc-source-icon dc-source-icon-cyan"><BarChart3 size={18}/></span>
-        <div className="min-w-0 flex-1"><div className="dc-eyebrow">Histórico importado</div><h3>Performance</h3><div className="dc-source-value">{fmtNumber(overview.contributionTotal)}</div><p>corridas acumuladas</p><div className="dc-source-updated">{latestPerformance ? `Importada em ${formatImportTime(latestPerformance.created_at)}` : "Aguardando a primeira importação"}</div></div>
+        <span className="dc-source-icon dc-source-icon-cyan" aria-hidden="true"><BarChart3 size={18}/></span>
+        <div className="dc-source-copy"><h2>Performance</h2><p>Histórico importado</p><span className="dc-source-updated">{latestPerformance ? `Importada em ${formatImportTime(latestPerformance.created_at)}` : "Aguardando a primeira importação"}</span></div>
+        <div className="dc-source-metric"><strong>{fmtNumber(overview.contributionTotal)}</strong><span>corridas</span></div>
       </article>
       <article className="dc-source-card dc-source-card-action">
-        <span className="dc-source-icon dc-source-icon-warning"><ClipboardList size={18}/></span>
-        <div className="min-w-0 flex-1"><div className="dc-eyebrow">Qualidade da atribuição</div><h3>Para revisar</h3><div className="dc-source-value">{fmtNumber(reviewCount)}</div><p>{reviewCount === 1 ? "UUID aguardando atribuição" : "UUIDs aguardando atribuição"}</p><button type="button" onClick={() => onTab("reviews")} className="dc-source-link">Abrir revisões <ArrowRight size={14}/></button></div>
+        <span className="dc-source-icon dc-source-icon-warning" aria-hidden="true"><ClipboardList size={18}/></span>
+        <div className="dc-source-copy"><h2>Para revisar</h2><p>{reviewCount === 1 ? "UUID aguardando atribuição" : "UUIDs aguardando atribuição"}</p><button type="button" onClick={() => onTab("reviews")} className="dc-source-link">Abrir revisões <ArrowRight size={14}/></button></div>
+        <div className="dc-source-metric"><strong>{fmtNumber(reviewCount)}</strong><span>{reviewCount === 1 ? "pendência" : "pendências"}</span></div>
       </article>
     </section>
+    {runMetrics.length > 0 && <details className="dc-run-details"><summary>Ver métricas da última coleta</summary><dl className="dc-run-metrics">{runMetrics.map(([key, value]) => <div key={key}><dt>{importMetricLabels[key] ?? key.replace(/([A-Z])/g, " $1")}</dt><dd>{fmtNumber(value)}</dd></div>)}</dl></details>}
 
     <div className="dc-main-grid">
       <DataCrazyHistory key={`${run?.id ?? "initial"}:${run?.status ?? "none"}:${refreshVersion}`} onTab={onTab}/>
       <aside className="dc-crossmatch-panel portal-panel" aria-labelledby="dc-crossmatch-title">
-        <div className="dc-panel-heading"><span className="dc-panel-icon"><ArrowDownUp size={18}/></span><div><div className="dc-eyebrow">Como os dados se conectam</div><h2 id="dc-crossmatch-title">Cruzamento</h2></div></div>
+        <div className="dc-panel-heading"><span className="dc-panel-icon"><ArrowDownUp size={18}/></span><h2 id="dc-crossmatch-title">Cruzamento</h2></div>
         <p className="dc-crossmatch-copy">O UUID do entregador na base Data Crazy identifica as corridas correspondentes no histórico de Performance.</p>
         <div className="dc-match-key"><span>Chave de relacionamento</span><strong>UUID do entregador</strong></div>
         <dl className="dc-crossmatch-stats">
@@ -678,6 +678,7 @@ function DataCrazyHistory({ onTab }: { onTab: (tab: TabId) => void }) {
   const [items, setItems] = useState<ImportActivityEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [technicalError, setTechnicalError] = useState("");
   const [retryVersion, setRetryVersion] = useState(0);
   const [sourceFilter, setSourceFilter] = useState<"all" | "data_crazy" | "performance">("all");
   const [search, setSearch] = useState("");
@@ -685,7 +686,14 @@ function DataCrazyHistory({ onTab }: { onTab: (tab: TabId) => void }) {
     let current = true;
     callAdminApi<ImportActivityEntry[]>("import-activity", { limit: 30, kind: sourceFilter })
       .then((result) => { if (current) setItems(result ?? []); })
-      .catch((cause) => { if (current) setError(cause instanceof Error ? cause.message : "Não foi possível carregar a linha do tempo."); })
+      .catch((cause) => {
+        if (!current) return;
+        const message = cause instanceof Error ? cause.message : "Erro desconhecido";
+        setTechnicalError(message);
+        setError(/PGRST202|schema cache|could not find the function/i.test(message)
+          ? "O histórico ainda não está disponível no banco. Tente novamente em instantes."
+          : "Não foi possível carregar as atividades. Tente novamente.");
+      })
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
   }, [retryVersion, sourceFilter]);
@@ -699,16 +707,17 @@ function DataCrazyHistory({ onTab }: { onTab: (tab: TabId) => void }) {
 
   return <section className="dc-timeline-panel portal-panel" aria-labelledby="dc-timeline-title">
     <div className="dc-timeline-header">
-      <div><div className="dc-eyebrow">Auditoria do painel</div><h2 id="dc-timeline-title">Linha do tempo de atividades</h2><p>Sincronizações, etapas e importações com data, responsável e resultado.</p></div>
+      <div><h2 id="dc-timeline-title">Linha do tempo de atividades</h2><p>Sincronizações, etapas e importações com data, responsável e resultado.</p></div>
       <button type="button" onClick={() => onTab("imports")} className="dc-panel-link">Abrir log completo <ArrowRight size={15}/></button>
     </div>
     <div className="dc-timeline-controls">
       <label className="dc-search"><Search size={17} aria-hidden="true"/><span className="sr-only">Buscar responsável ou atividade</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar responsável ou atividade" /></label>
       <div className="dc-filter-group" role="group" aria-label="Filtrar atividades por origem">
-        {[{ value: "all", label: "Todas" }, { value: "data_crazy", label: "Data Crazy" }, { value: "performance", label: "Performance" }].map((option) => <button key={option.value} type="button" aria-pressed={sourceFilter === option.value} onClick={() => { if (sourceFilter === option.value) return; setItems([]); setLoading(true); setError(""); setSourceFilter(option.value as typeof sourceFilter); }}>{option.label}</button>)}
+        {[{ value: "all", label: "Todas" }, { value: "data_crazy", label: "Data Crazy" }, { value: "performance", label: "Performance" }].map((option) => <button key={option.value} type="button" aria-pressed={sourceFilter === option.value} onClick={() => { if (sourceFilter === option.value) return; setItems([]); setLoading(true); setError(""); setTechnicalError(""); setSourceFilter(option.value as typeof sourceFilter); }}>{option.label}</button>)}
       </div>
     </div>
-    {error && <div role="alert" className="dc-inline-alert dc-timeline-error"><span>{error}</span><button type="button" onClick={() => { setLoading(true); setError(""); setRetryVersion((version) => version + 1); }}>Tentar novamente</button></div>}
+    <div className="dc-timeline-columns" aria-hidden="true"><span>Hora</span><span>Responsável</span><span>Origem</span><span>Estado</span><span>Atividade</span></div>
+    {error && <div role="alert" className="dc-timeline-error"><div><strong>Não foi possível abrir a linha do tempo</strong><p>{error}</p></div><button type="button" onClick={() => { setLoading(true); setError(""); setTechnicalError(""); setRetryVersion((version) => version + 1); }}>Tentar novamente</button>{technicalError && <details><summary>Detalhes técnicos</summary><code>{technicalError}</code></details>}</div>}
     {loading ? <div role="status" className="dc-timeline-empty"><LoaderCircle size={17} className="animate-spin"/>Carregando atividades registradas…</div> : !error && visibleItems.length === 0 ? <div className="dc-timeline-empty"><History size={19}/><span>{items.length ? "Nenhuma atividade corresponde à busca." : "Ainda não há atividades registradas pelo painel."}</span></div> : visibleItems.length > 0 ? <ol className="dc-timeline-list">
       {visibleItems.map((item, index) => {
         const previous = visibleItems[index - 1];
@@ -722,7 +731,7 @@ function DataCrazyHistory({ onTab }: { onTab: (tab: TabId) => void }) {
           <li className="dc-event-row">
             <span className={`dc-event-marker ${eventTone}`} aria-hidden="true"/>
             <article className="dc-event-card">
-              <div className="dc-event-topline"><time dateTime={item.created_at}>{Number.isNaN(date.getTime()) ? "—" : date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</time><span className="dc-event-source">{sourceLabel}</span><span className={`dc-event-type ${eventTone}`}>{eventLabel}</span><span className="dc-event-actor"><UserRound size={13} aria-hidden="true"/>{importActorLabel(item)}</span></div>
+              <div className="dc-event-topline"><time dateTime={item.created_at}>{Number.isNaN(date.getTime()) ? "—" : date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</time><span className="dc-event-actor" title={item.actor_email ?? undefined}><UserRound size={13} aria-hidden="true"/>{importActorLabel(item)}</span><span className="dc-event-source">{sourceLabel}</span><span className={`dc-event-type ${eventTone}`}>{eventLabel}</span></div>
               <p className="dc-event-message">{repairTextEncoding(item.message)}</p>
               {item.source === "file" && item.file_name && <p className="dc-event-file">Arquivo · {repairTextEncoding(item.file_name)}</p>}
             </article>
@@ -730,7 +739,7 @@ function DataCrazyHistory({ onTab }: { onTab: (tab: TabId) => void }) {
         </Fragment>;
       })}
     </ol> : null}
-    <div className="dc-timeline-footer">Mostrando {fmtNumber(visibleItems.length)} de até {fmtNumber(items.length)} atividades recentes</div>
+    <div className="dc-timeline-footer">{error ? "Histórico indisponível" : loading ? "Carregando atividades" : `Mostrando ${fmtNumber(visibleItems.length)} de até ${fmtNumber(items.length)} atividades recentes`}</div>
   </section>;
 }
 
