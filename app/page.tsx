@@ -5,7 +5,7 @@ import type { Session } from "@supabase/supabase-js";
 import {
   ArrowDownUp, ArrowRight, Award, BarChart3, Check, CheckCircle2, ChevronDown,
   CircleAlert, ClipboardList, CloudUpload, Download, Eye, EyeOff, FileSpreadsheet,
-  CalendarDays, Gift, History, LoaderCircle, LogOut, Mail, MapPin, Menu, Moon, Search, ShieldCheck, Sun, UserRound, Users, XCircle,
+  CalendarDays, Gift, History, LoaderCircle, LogOut, Mail, MapPin, Menu, Moon, RefreshCw, Search, ShieldCheck, Sun, UserRound, Users, XCircle,
 } from "lucide-react";
 import { callAccessApi, callAdminApi, callDataCrazySync, DATA_SCHEMA, getSupabase } from "@/lib/supabase";
 import {
@@ -87,10 +87,21 @@ const adminTabs: { id: TabId; label: string; icon: typeof BarChart3 }[] = [
   { id: "data-crazy", label: "Data Crazy", icon: FileSpreadsheet },
   { id: "performance", label: "Performance", icon: ArrowDownUp },
   { id: "reviews", label: "Revisões", icon: ClipboardList },
+  { id: "imports", label: "Importações", icon: History },
   { id: "accounts", label: "Acessos", icon: Users },
   { id: "profile", label: "Meu perfil", icon: UserRound },
-  { id: "imports", label: "Importações", icon: History },
 ];
+
+const adminTabDescriptions: Record<TabId, string> = {
+  dashboard: "Acompanhe a base, as corridas e o que precisa de atenção.",
+  referrals: "Entregadores atribuídos, metas e prêmios em um só lugar.",
+  "data-crazy": "Estado da coleta, base publicada e histórico das sincronizações.",
+  performance: "Some novas corridas ao histórico e acompanhe a cobertura dos dados.",
+  reviews: "Resolva entregadores sem atribuição clara.",
+  imports: "Consulte cargas, etapas e responsáveis.",
+  accounts: "Gerencie quem pode acessar cada área.",
+  profile: "Ajuste como seu nome aparece no painel.",
+};
 
 function savedAdminTab(email: string): TabId {
   if (typeof window === "undefined") return "dashboard";
@@ -227,22 +238,26 @@ export default function Home() {
 
   const isAdmin = profile.role === "admin";
   const visibleTabs = isAdmin ? adminTabs.filter((tab) => tab.id !== "profile") : adminTabs.slice(0, 1);
+  const primaryTabs = visibleTabs.filter((tab) => tab.id !== "imports" && tab.id !== "accounts");
+  const managementTabs = visibleTabs.filter((tab) => tab.id === "imports" || tab.id === "accounts");
   const title = isAdmin ? "Administração" : `Indicações de ${influencer?.name ?? "você"}`;
   const subtitle = isAdmin ? "Indicados, corridas, revisões e acessos" : "Corridas e prêmios por entregador";
 
   return (
     <main className="portal-shell min-h-screen bg-[#f6f8fc] text-[#172a40]">
       <div className="mx-auto flex min-h-screen max-w-[1600px]">
-        <aside className="sticky top-0 hidden h-screen w-[250px] shrink-0 self-start flex-col overflow-y-auto border-r border-[#dfe6f0] bg-white px-5 py-7 lg:flex">
+        <aside className="portal-sidebar sticky top-0 hidden h-screen w-[250px] shrink-0 self-start flex-col overflow-y-auto border-r border-[#dfe6f0] bg-white px-5 py-7 lg:flex">
           <Brand />
-          <div className="mt-12 text-xs font-bold uppercase tracking-[.18em] text-[#63788e]">Menu</div>
-          <nav className="mt-3 space-y-1.5">
-            {visibleTabs.map((tab) => <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => selectTab(tab.id)} />)}
+          <nav aria-label="Navegação principal" className="mt-11 space-y-1">
+            <div className="px-3.5 pb-2 text-[11px] font-bold uppercase tracking-[.12em] text-[#5b7086]">Acompanhar</div>
+            {primaryTabs.map((tab) => <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => selectTab(tab.id)} />)}
+            {managementTabs.length > 0 && <div className="px-3.5 pb-2 pt-7 text-[11px] font-bold uppercase tracking-[.12em] text-[#5b7086]">Administrar</div>}
+            {managementTabs.map((tab) => <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => selectTab(tab.id)} />)}
           </nav>
         </aside>
 
         <section className="min-w-0 flex-1">
-          <header className="sticky top-0 z-20 flex h-[76px] items-center justify-between gap-2 border-b border-[#dfe6f0] bg-white/95 px-3 backdrop-blur-md sm:px-8 lg:px-10">
+          <header className="portal-topbar sticky top-0 z-20 flex h-[76px] items-center justify-between gap-2 border-b border-[#dfe6f0] bg-white px-3 sm:px-8 lg:px-10">
             <div className="flex min-w-0 items-center gap-2 sm:gap-3">
               {isAdmin && <button onClick={() => setMobileMenu(!mobileMenu)} className="flex size-11 items-center justify-center rounded-lg text-[#526981] hover:bg-[#f0f4f9] lg:hidden" aria-label={mobileMenu ? "Fechar menu" : "Abrir menu"} aria-expanded={mobileMenu}><Menu size={21} /></button>}
               <div className="min-w-0"><div className="truncate text-sm font-semibold sm:text-[15px]">{title}</div><div className="mt-0.5 hidden text-xs text-[#7a8b8e] sm:block">{subtitle}</div></div>
@@ -255,7 +270,7 @@ export default function Home() {
             </div>
           </header>
 
-          {mobileMenu && <><button className="fixed inset-0 z-20 bg-[#112e53]/20 lg:hidden" aria-label="Fechar menu" onClick={() => setMobileMenu(false)}/><div className="fixed inset-x-0 top-[76px] z-30 border-b border-[#dfe6f0] bg-white px-4 py-3 shadow-lg lg:hidden">{visibleTabs.map((tab) => <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => { selectTab(tab.id); setMobileMenu(false); }} />)}</div></>}
+          {mobileMenu && <><button className="fixed inset-0 z-20 bg-[#112e53]/20 lg:hidden" aria-label="Fechar menu" onClick={() => setMobileMenu(false)}/><nav aria-label="Navegação principal" className="fixed inset-x-0 top-[76px] z-30 max-h-[calc(100dvh-76px)] overflow-y-auto border-b border-[#dfe6f0] bg-white px-4 py-3 shadow-lg lg:hidden"><div className="grid gap-1 sm:grid-cols-2">{visibleTabs.map((tab) => <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => { selectTab(tab.id); setMobileMenu(false); }} />)}</div></nav></>}
           <div className="mx-auto max-w-[1320px] px-4 pb-12 pt-7 sm:px-8 sm:pt-9 lg:px-10">
             {loadError && <div className="mb-5 flex items-start gap-3 rounded-xl border border-[#f2d8bd] bg-[#fffaf4] p-4 text-sm text-[#84572f]"><CircleAlert size={18} className="mt-0.5 shrink-0" />{loadError}</div>}
             {!isAdmin ? <InfluencerDashboard referrals={referrals} influencer={influencer} lastImportAt={lastImportAt} search={search} setSearch={setSearch} onlyUnlocked={onlyUnlocked} setOnlyUnlocked={setOnlyUnlocked} /> : (
@@ -274,7 +289,7 @@ function Brand() {
 
 function NavButton({ tab, active, onClick }: { tab: { id: TabId; label: string; icon: typeof BarChart3 }; active: boolean; onClick: () => void }) {
   const Icon = tab.icon;
-  return <button onClick={onClick} className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left text-[13px] font-semibold transition ${active ? "bg-[#eaf1fa] text-[#205b9e]" : "text-[#60758b] hover:bg-[#f5f8f7] hover:text-[#24444a]"}`}><Icon size={17} strokeWidth={1.8} />{tab.label}{active && <span className="ml-auto size-1.5 rounded-full bg-[#2f6fc2]" />}</button>;
+  return <button type="button" onClick={onClick} aria-current={active ? "page" : undefined} className={`portal-nav-button flex min-h-11 w-full items-center gap-3 rounded-lg px-3.5 py-2.5 text-left text-[13px] transition ${active ? "bg-[#eaf1fa] font-bold text-[#205b9e]" : "font-semibold text-[#60758b] hover:bg-[#f5f8fc] hover:text-[#24444a]"}`}><Icon size={17} strokeWidth={1.8} />{tab.label}{active && <span className="ml-auto size-1.5 rounded-full bg-[#2f6fc2]" />}</button>;
 }
 
 function Splash() {
@@ -402,14 +417,14 @@ function InfluencerDashboard({ referrals, influencer, lastImportAt, search, setS
 
 function StatCard({ label, value, icon, sub, color }: { label: string; value: string; icon: React.ReactNode; sub: string; color: "teal" | "blue" | "gold" | "plum" }) {
   const colors = { teal: "bg-[#eaf1fa] text-[#205b9e]", blue: "bg-[#eaf1fa] text-[#5375a1]", gold: "bg-[#fff5df] text-[#b17a20]", plum: "bg-[#f4eef9] text-[#8865a3]" };
-  return <div className="rounded-2xl border border-[#dfe6f0] bg-white p-4.5 shadow-[0_5px_20px_-18px_#173f35]"><div className="flex items-start justify-between"><div className="text-xs font-semibold text-[#76888a]">{label}</div><div className={`flex size-8 items-center justify-center rounded-[11px] ${colors[color]}`}>{icon}</div></div><div className="mt-3 text-[25px] font-semibold tracking-[-.04em] text-[#213c41]">{value}</div><div className="mt-1 text-xs text-[#74889b]">{sub}</div></div>;
+  return <div className="stat-card rounded-xl border border-[#dfe6f0] bg-white p-4 sm:p-5"><div className="flex items-start justify-between gap-3"><div className="text-xs font-semibold leading-5 text-[#60758b]">{label}</div><div className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${colors[color]}`}>{icon}</div></div><div className="mt-3 text-[25px] font-bold tabular-nums tracking-[-.03em] text-[#203b58]">{value}</div><div className="mt-1 text-xs text-[#60758b]">{sub}</div></div>;
 }
 
 function ReferralRow({ referral }: { referral: Referral }) {
   const [expanded, setExpanded] = useState(false);
   const progress = referral.route_goal > 0 ? Math.min(100, Math.round(referral.routes / referral.route_goal * 100)) : 0;
   return <div className="px-4 py-4 sm:px-6"><button onClick={() => setExpanded(!expanded)} aria-expanded={expanded} className="grid min-h-14 w-full gap-4 text-left md:grid-cols-[minmax(180px,1.05fr)_minmax(190px,1.4fr)_145px_24px] md:items-center">
-    <div className="flex min-w-0 items-center gap-3"><div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#eaf1fa] text-xs font-bold text-[#2b5d9c]">{(referral.name || "EN").split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</div><div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-[#223950]">{referral.name || "Nome indisponível"}</div><div className="mt-1 flex items-center gap-1 text-xs text-[#657b90]"><MapPin size={13}/>{referral.region || "Região não informada"}</div><div className="mt-1 flex items-center gap-1 text-xs text-[#74889b]"><CalendarDays size={13}/>Liberação: {fmtDate(referral.released_at)}</div></div><ChevronDown size={18} className={`shrink-0 text-[#5e7894] transition md:hidden ${expanded ? "rotate-180" : ""}`} /></div>
+    <div className="flex min-w-0 items-center gap-3"><div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#eaf1fa] text-xs font-bold text-[#2b5d9c]">{(referral.name || "EN").split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</div><div className="min-w-0 flex-1"><div className="courier-name text-[16px] font-bold leading-5 text-[#203b58]">{referral.name || "Nome indisponível"}</div><div className="mt-1 flex items-center gap-1 text-xs text-[#657b90]"><MapPin size={13}/>{referral.region || "Região não informada"}</div><div className="mt-1 flex items-center gap-1 text-xs text-[#74889b]"><CalendarDays size={13}/>Liberação: {fmtDate(referral.released_at)}</div></div><ChevronDown size={18} className={`shrink-0 text-[#5e7894] transition md:hidden ${expanded ? "rotate-180" : ""}`} /></div>
     <div><div className="mb-2 flex items-center justify-between text-xs"><span className="font-semibold text-[#294866]">{fmtNumber(referral.routes)} <span className="font-normal text-[#64798d]">de {fmtNumber(referral.route_goal)} corridas</span></span><span className="font-semibold text-[#245ca6]">{progress}%</span></div><div className="h-2 overflow-hidden rounded-full bg-[#e8eef7]"><div className="h-full rounded-full bg-[#2f6fc2] transition-all" style={{ width: `${progress}%` }}/></div></div>
     <div className="flex items-center justify-between gap-2 md:block md:text-right">{referral.prize_unlocked ? <span className="inline-flex items-center gap-1.5 rounded-full bg-[#eaf2fc] px-2.5 py-1.5 text-xs font-bold text-[#205b9e]"><CheckCircle2 size={12}/>Prêmio liberado</span> : <><span className="block text-[13px] font-semibold text-[#415b60]">Faltam {fmtNumber(referral.routes_remaining)}</span><span className="mt-0.5 block text-xs text-[#697f94]">para {fmtMoney(referral.prize_cents)}</span></>}</div><ChevronDown size={16} className={`hidden text-[#9aaaa8] transition md:block ${expanded ? "rotate-180" : ""}`} />
   </button>{expanded && <div className="mt-4 grid gap-3 rounded-xl bg-[#f7faff] p-3.5 text-[13px] sm:grid-cols-3"><Detail label="Telefone" value={referral.phone || "Indisponível"}/><Detail label="CPF" value={referral.cpf ? `${referral.cpf.slice(0, 3)}.${referral.cpf.slice(3, 6)}.${referral.cpf.slice(6, 9)}-${referral.cpf.slice(9)}` : "Não informado"}/><Detail label="UUID" value={referral.uuid}/></div>}</div>;
@@ -420,12 +435,17 @@ function Detail({ label, value }: { label: string; value: string }) { return <di
 function EmptyState({ title, detail }: { title: string; detail: string }) { return <div className="grid min-h-56 place-items-center px-5 py-10 text-center"><div className="max-w-sm"><div className="mx-auto flex size-11 items-center justify-center rounded-[14px] bg-[#eaf1fa] text-[#245b9b]"><Users size={19}/></div><h3 className="mt-4 text-[14px] font-bold">{title}</h3><p className="mt-1.5 text-xs leading-5 text-[#60758b]">{detail}</p></div></div>; }
 
 function AdminDashboard({ activeTab, overview, profile, refresh, onTab, onAdminNameSaved }: { activeTab: TabId; overview: AdminOverview | null; profile: Profile; refresh: () => Promise<void>; onTab: (tab: TabId) => void; onAdminNameSaved: (userId: string, displayName: string | null) => void }) {
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const refreshPage = useCallback(async () => {
+    await refresh();
+    setRefreshVersion((version) => version + 1);
+  }, [refresh]);
   if (!overview) return <div className="grid min-h-64 place-items-center text-sm text-[#60758b]"><LoaderCircle className="mr-2 animate-spin" size={18}/>Carregando área administrativa…</div>;
   return <div>
-    <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h1 className="mt-2 text-[29px] font-semibold tracking-[-.03em] sm:text-[34px]">{adminTabs.find((tab) => tab.id === activeTab)?.label}</h1><p className="mt-1.5 text-[13px] text-[#60758b]">Sincronize indicados, importe corridas, revise atribuições e gerencie acessos.</p></div><button onClick={() => void refresh()} className="h-11 w-fit rounded-lg border border-[#d4deeb] bg-white px-3.5 text-[13px] font-semibold text-[#536d70] hover:bg-[#f7faff]">Atualizar dados</button></div>
+    <div className="page-heading mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h1 className="text-[28px] font-bold tracking-[-.03em] text-[#203b58] sm:text-[32px]">{adminTabs.find((tab) => tab.id === activeTab)?.label}</h1><p className="mt-1.5 max-w-[65ch] text-sm leading-5 text-[#60758b]">{adminTabDescriptions[activeTab]}</p></div><button type="button" onClick={() => void refreshPage()} className="secondary-action inline-flex h-11 w-fit shrink-0 items-center gap-2 rounded-lg border border-[#d4deeb] bg-white px-3.5 text-[13px] font-semibold text-[#405b76] hover:bg-[#f7faff]"><RefreshCw size={15}/>Atualizar dados</button></div>
     {activeTab === "dashboard" && <AdminHome overview={overview} onTab={onTab}/>}
     {activeTab === "referrals" && <AdminReferralsPanel influencers={overview.influencers}/>}
-    {activeTab === "data-crazy" && <DataCrazySyncPanel refresh={refresh}/>}
+    {activeTab === "data-crazy" && <DataCrazySyncPanel overview={overview} refresh={refreshPage} refreshVersion={refreshVersion} onTab={onTab}/>}
     {activeTab === "performance" && <ImportPanel overview={overview} refresh={refresh}/>}
     {activeTab === "reviews" && <ReviewsPanel overview={overview} refresh={refresh}/>}
     {activeTab === "accounts" && <AccountsPanel overview={overview} refresh={refresh} onAdminNameSaved={onAdminNameSaved}/>}
@@ -435,13 +455,25 @@ function AdminDashboard({ activeTab, overview, profile, refresh, onTab, onAdminN
 }
 
 function AdminHome({ overview, onTab }: { overview: AdminOverview; onTab: (tab: TabId) => void }) {
+  const latestDataCrazy = overview.imports.filter((item) => item.kind === "data_crazy").sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+  const latestPerformance = overview.imports.filter((item) => item.kind === "performance").sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+  const importState = (status: string) => ({ completed: "concluída", staging: "em andamento", failed: "falhou", cancelled: "cancelada" })[status as "completed" | "staging" | "failed" | "cancelled"] ?? status;
   return <><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Entregadores ativos" value={fmtNumber(overview.referralCount)} icon={<Users size={17}/>} sub="na lista atual do Data Crazy" color="teal"/><StatCard label="Corridas acumuladas" value={fmtNumber(overview.contributionTotal)} icon={<BarChart3 size={17}/>} sub="soma do histórico importado" color="blue"/><StatCard label="Atribuições em revisão" value={fmtNumber(overview.reviewCount ?? overview.reviews.length)} icon={<ClipboardList size={17}/>} sub="UUIDs aguardando responsável" color="gold"/><StatCard label="Contas vinculadas" value={fmtNumber(overview.members.length)} icon={<ShieldCheck size={17}/>} sub="administração e influenciadores" color="plum"/></div>
-    <section className="mt-7 rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><div><h2 className="text-[15px] font-bold">Próximas ações</h2><p className="mt-1 text-[13px] text-[#63788e]">Atualize os dados ou resolva atribuições pendentes.</p></div><div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3"><ActionCard icon={<Users size={17}/>} title="Consultar indicados" text="Acompanhe a base completa por influenciador." onClick={() => onTab("referrals")}/><ActionCard icon={<CloudUpload size={17}/>} title="Sincronizar Data Crazy" text="Atualize a lista de indicados pela API." onClick={() => onTab("data-crazy")}/><ActionCard icon={<ArrowDownUp size={17}/>} title="Somar performance" text="Acrescente novas corridas ao acumulado da campanha." onClick={() => onTab("performance")}/><ActionCard icon={<ClipboardList size={17}/>} title={`Revisar atribuições · ${overview.reviewCount ?? overview.reviews.length}`} text="Resolva UUIDs sem um influenciador reconhecido." onClick={() => onTab("reviews")}/><ActionCard icon={<Users size={17}/>} title="Gerenciar acessos" text="Convide cada parceiro para sua própria conta." onClick={() => onTab("accounts")}/></div></section>
-    <section className="mt-4 rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><div className="flex items-center justify-between"><div><h2 className="text-[15px] font-bold">Regras de premiação</h2><p className="mt-1 text-[13px] text-[#63788e]">Um prêmio por entregador ao alcançar a meta.</p></div><Gift size={18} className="text-[#b3822e]"/></div><div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{overview.influencers.map((item) => <div key={item.id} className="flex items-center justify-between rounded-xl bg-[#f7faff] px-3.5 py-3"><span className="text-xs font-semibold">{item.name}</span><span className="text-xs font-semibold text-[#60758b]">{item.route_goal} corridas <span className="mx-1 text-[#a1b0c2]">·</span><strong className="text-[#205b9e]">{fmtMoney(item.prize_cents)}</strong></span></div>)}</div></section>
+    <div className="mt-6 grid items-start gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(300px,.75fr)]">
+      <section className="rounded-xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><h2 className="text-base font-bold text-[#203b58]">Fluxo de dados</h2><p className="mt-1 text-[13px] text-[#60758b]">Da lista de entregadores às corridas e atribuições.</p>
+        <div className="mt-5 divide-y divide-[#e6ebf2] border-y border-[#e6ebf2]">
+          <WorkflowAction icon={<CloudUpload size={18}/>} title="Data Crazy" detail={latestDataCrazy ? `Carga recente: ${formatImportTime(latestDataCrazy.created_at)} · ${importState(latestDataCrazy.status)}` : "Nenhuma carga entre as mais recentes"} meta={`${fmtNumber(overview.referralCount)} entregadores`} onClick={() => onTab("data-crazy")}/>
+          <WorkflowAction icon={<ArrowDownUp size={18}/>} title="Performance" detail={latestPerformance ? `Carga recente: ${formatImportTime(latestPerformance.created_at)} · ${importState(latestPerformance.status)}` : "Nenhuma carga entre as mais recentes"} meta={`${fmtNumber(overview.contributionTotal)} corridas`} onClick={() => onTab("performance")}/>
+          <WorkflowAction icon={<ClipboardList size={18}/>} title="Revisões" detail="Confira os UUIDs que precisam de atribuição." meta={`${fmtNumber(overview.reviewCount ?? overview.reviews.length)} pendentes`} onClick={() => onTab("reviews")}/>
+        </div>
+        <button type="button" onClick={() => onTab("referrals")} className="mt-4 inline-flex min-h-11 items-center gap-2 text-[13px] font-bold text-[#205b9e] hover:underline">Ver todos os indicados <ArrowRight size={15}/></button>
+      </section>
+      <section className="rounded-xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><div className="flex items-center justify-between gap-3"><h2 className="text-base font-bold text-[#203b58]">Metas e prêmios</h2><Gift size={18} className="text-[#b3822e]"/></div><p className="mt-1 text-[13px] text-[#60758b]">Um prêmio por entregador ao alcançar a meta.</p><div className="mt-4 max-h-[348px] divide-y divide-[#e6ebf2] overflow-y-auto">{overview.influencers.map((item) => <div key={item.id} className="flex items-center justify-between gap-3 py-2.5 text-[13px]"><span className="min-w-0 truncate font-semibold text-[#29435e]">{item.name}</span><span className="shrink-0 tabular-nums text-[#60758b]">{fmtNumber(item.route_goal)} corridas · <strong className="text-[#205b9e]">{fmtMoney(item.prize_cents)}</strong></span></div>)}</div></section>
+    </div>
   </>;
 }
 
-function ActionCard({ icon, title, text, onClick }: { icon: React.ReactNode; title: string; text: string; onClick: () => void }) { return <button onClick={onClick} className="group flex gap-3 rounded-xl border border-[#e5ebf4] p-3.5 text-left transition hover:border-[#b8d1ed] hover:bg-[#f7faff]"><div className="flex size-9 shrink-0 items-center justify-center rounded-[11px] bg-[#eaf1fa] text-[#205b9e]">{icon}</div><div><div className="text-[13px] font-bold text-[#29435e]">{title}</div><div className="mt-1 text-xs leading-[17px] text-[#63788e]">{text}</div></div><ArrowRight size={14} className="ml-auto mt-1 shrink-0 text-[#a6b2b0] transition group-hover:translate-x-0.5 group-hover:text-[#205b9e]"/></button>; }
+function WorkflowAction({ icon, title, detail, meta, onClick }: { icon: React.ReactNode; title: string; detail: string; meta: string; onClick: () => void }) { return <button type="button" onClick={onClick} className="workflow-action group flex min-h-[76px] w-full items-center gap-3 py-3 text-left hover:bg-[#f7faff]"><span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#eaf1fa] text-[#205b9e]">{icon}</span><span className="min-w-0 flex-1"><span className="block text-[13px] font-bold text-[#29435e]">{title}</span><span className="mt-0.5 block text-xs text-[#60758b]">{detail}</span></span><span className="hidden shrink-0 text-xs font-semibold tabular-nums text-[#405b76] sm:block">{meta}</span><ArrowRight size={16} className="shrink-0 text-[#71859b] transition-transform group-hover:translate-x-0.5"/></button>; }
 
 const syncPhaseLabels: Record<string, string> = {
   businesses: "Buscando negócios e pipelines",
@@ -451,7 +483,7 @@ const syncPhaseLabels: Record<string, string> = {
   failed: "Sincronização interrompida",
 };
 
-function DataCrazySyncPanel({ refresh }: { refresh: () => Promise<void> }) {
+function DataCrazySyncPanel({ overview, refresh, refreshVersion, onTab }: { overview: AdminOverview; refresh: () => Promise<void>; refreshVersion: number; onTab: (tab: TabId) => void }) {
   const [run, setRun] = useState<DataCrazySyncRun | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
@@ -507,7 +539,7 @@ function DataCrazySyncPanel({ refresh }: { refresh: () => Promise<void> }) {
   const statusLabel = run?.status === "running" ? "Em andamento" : run?.status === "completed" ? "Concluída" : "Falhou";
   const monthLabel = run?.status === "running" && run.windowMonth ? ` · ${run.windowMonth.slice(5, 7)}/${run.windowMonth.slice(0, 4)}` : "";
 
-  return <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(280px,.75fr)]">
+  return <div className="space-y-4"><div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(280px,.7fr)]">
     <section className="rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex min-w-0 items-start gap-3"><div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#eaf1fa] text-[#205b9e]"><CloudUpload size={19}/></div><div><h2 className="text-[16px] font-bold">Sincronizar Data Crazy</h2><p className="mt-1 max-w-[58ch] text-[13px] leading-5 text-[#60758b]">Busca os indicados pela API e atualiza a lista quando a coleta terminar.</p></div></div>
@@ -523,8 +555,29 @@ function DataCrazySyncPanel({ refresh }: { refresh: () => Promise<void> }) {
         {Object.keys(run.metrics ?? {}).length > 0 && <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-[#e5ebf4] pt-4 sm:grid-cols-3">{Object.entries(run.metrics).filter(([key, value]) => typeof value === "number" && !(key === "businessesReceived" && typeof run.metrics.businesses === "number") && !(key === "leadsReceived" && typeof run.metrics.leads === "number")).map(([key, value]) => <div key={key}><dt className="text-[11px] text-[#60758b]">{importMetricLabels[key] ?? key.replace(/([A-Z])/g, " $1")}</dt><dd className="mt-0.5 text-[15px] font-bold tabular-nums">{fmtNumber(value)}</dd></div>)}</dl>}
       </div>}
     </section>
-    <section className="self-start rounded-2xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><h3 className="text-[14px] font-bold">Como funciona</h3><ol className="mt-4 space-y-4 text-[13px] leading-5 text-[#60758b]"><li><strong className="text-[#29435e]">1. Atribuição.</strong> A pipeline de cada negócio define o influenciador.</li><li><strong className="text-[#29435e]">2. Vínculo.</strong> O campo “ID do Entregador” conecta os dados às corridas da Performance.</li><li><strong className="text-[#29435e]">3. Publicação.</strong> A lista anterior permanece disponível até a coleta completa ser validada e publicada.</li></ol><p className="mt-5 border-t border-[#e5ebf4] pt-4 text-xs leading-5 text-[#60758b]">A sincronização automática está programada para as 06:00, horário de Brasília. As corridas acumuladas permanecem no histórico.</p></section>
+    <section className="rounded-xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><h3 className="text-[15px] font-bold text-[#203b58]">Base publicada</h3><p className="mt-1 text-[13px] text-[#60758b]">Lista disponível para cruzar com a Performance.</p><div className="mt-5 text-[30px] font-bold tabular-nums tracking-[-.03em] text-[#203b58]">{fmtNumber(overview.referralCount)}</div><p className="text-xs text-[#60758b]">entregadores atribuídos</p><div className="mt-5 space-y-1 border-t border-[#e5ebf4] pt-3"><button type="button" onClick={() => onTab("referrals")} className="flex min-h-11 w-full items-center justify-between text-left text-[13px] font-semibold text-[#205b9e] hover:underline">Ver entregadores <ArrowRight size={15}/></button><button type="button" onClick={() => onTab("reviews")} className="flex min-h-11 w-full items-center justify-between text-left text-[13px] font-semibold text-[#405b76] hover:underline">Atribuições para revisar <span className="flex items-center gap-2 tabular-nums">{fmtNumber(overview.reviewCount ?? overview.reviews.length)} <ArrowRight size={15}/></span></button></div><p className="mt-4 text-xs leading-5 text-[#60758b]">A pipeline define o influenciador. O ID do Entregador liga a lista às corridas. A coleta completa é validada antes de publicar.</p><p className="mt-2 text-xs leading-5 text-[#60758b]">Coleta automática às 06:00, horário de Brasília.</p></section>
+  </div>
+    <DataCrazyHistory key={`${run?.id ?? "initial"}:${run?.status ?? "none"}:${refreshVersion}`} onTab={onTab}/>
   </div>;
+}
+
+function DataCrazyHistory({ onTab }: { onTab: (tab: TabId) => void }) {
+  const [items, setItems] = useState<ImportHistoryEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [retryVersion, setRetryVersion] = useState(0);
+  useEffect(() => {
+    let current = true;
+    callAdminApi<ImportHistoryResult>("import-history", { limit: 5, offset: 0, status: "all", kind: "data_crazy" })
+      .then((result) => { if (current) setItems(result.items ?? []); })
+      .catch((cause) => { if (current) setError(cause instanceof Error ? cause.message : "Não foi possível carregar o histórico."); })
+      .finally(() => { if (current) setLoading(false); });
+    return () => { current = false; };
+  }, [retryVersion]);
+  return <section className="rounded-xl border border-[#dfe6f0] bg-white p-5 sm:p-6"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-[15px] font-bold text-[#203b58]">Histórico Data Crazy</h3><p className="mt-1 text-[13px] text-[#60758b]">Sincronizações da API e importações de arquivo, com responsável e resultado.</p></div><button type="button" onClick={() => onTab("imports")} className="inline-flex min-h-11 items-center gap-2 text-[13px] font-bold text-[#205b9e] hover:underline">Ver log completo <ArrowRight size={15}/></button></div>
+    {error && <div role="alert" className="mt-4 flex flex-wrap items-center gap-3 text-[13px] text-[#a94b37]"><span>{error}</span><button type="button" onClick={() => { setLoading(true); setError(""); setRetryVersion((version) => version + 1); }} className="min-h-11 font-bold underline">Tentar novamente</button></div>}
+    {loading ? <p role="status" className="mt-5 text-[13px] text-[#60758b]">Carregando histórico…</p> : !error && items.length === 0 ? <p className="mt-5 text-[13px] text-[#60758b]">Ainda não há cargas Data Crazy registradas.</p> : items.length > 0 ? <ol className="mt-4 divide-y divide-[#e6ebf2] border-t border-[#e6ebf2]">{items.map((item) => <li key={item.id} className="flex flex-wrap items-start justify-between gap-3 py-3.5"><div className="min-w-0"><div className="text-[13px] font-semibold text-[#29435e]">{item.source === "file" ? "Arquivo Data Crazy" : "Sincronização da API"} · {item.status === "completed" ? "concluída" : item.status === "staging" ? "em andamento" : item.status === "failed" ? "falhou" : "cancelada"}</div><div className="mt-1 text-xs text-[#60758b]">{formatImportTime(item.created_at)} · {importActorLabel(item)}</div></div><div className="text-right text-xs tabular-nums text-[#60758b]">{item.status === "completed" ? `${fmtNumber(item.staged_rows)} entregadores` : item.last_event_message || "Sem detalhes"}</div></li>)}</ol> : null}
+  </section>;
 }
 
 function ImportPanel({ overview, refresh }: { overview: AdminOverview; refresh: () => Promise<void> }) {
@@ -1016,34 +1069,34 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
       </div>
       <div className="mt-4 space-y-3">
         <label className="relative block text-xs font-semibold text-[#63788e]"><span className="sr-only">Buscar indicado</span><Search size={16} className="pointer-events-none absolute left-3 top-[13px] text-[#8091a4]"/><input type="search" value={search} onChange={(event) => changeSearch(event.target.value)} placeholder="Buscar nome, UUID, telefone ou CPF" className="h-11 w-full rounded-lg border border-[#d4deeb] bg-white pl-9 pr-3 text-[13px] font-medium text-[#29435e] outline-none focus:border-[#2f6fc2] focus:ring-2 focus:ring-[#d7e8fa]" /></label>
-        <div role="group" aria-label="Filtrar indicados por influenciador" className="flex flex-wrap gap-2">
-          {[{ id: "all", name: "Todos" }, ...influencers].map((item) => <button key={item.id} type="button" onClick={() => changeFilter(item.id)} aria-pressed={filterId === item.id} className={`min-h-10 rounded-full border px-3.5 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc2] ${filterId === item.id ? "border-[#185aa9] bg-[#185aa9] text-white" : "border-[#d4deeb] bg-white text-[#536d70] hover:bg-[#f7faff]"}`}>{item.name}</button>)}
+        <div role="group" aria-label="Filtrar indicados por influenciador" className="scrollbar-thin flex gap-2 overflow-x-auto pb-2">
+          {[{ id: "all", name: "Todos" }, ...influencers].map((item) => <button key={item.id} type="button" onClick={() => changeFilter(item.id)} aria-pressed={filterId === item.id} className={`min-h-10 shrink-0 rounded-full border px-3.5 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc2] ${filterId === item.id ? "border-[#185aa9] bg-[#185aa9] text-white" : "border-[#d4deeb] bg-white text-[#536d70] hover:bg-[#f7faff]"}`}>{item.name}</button>)}
         </div>
       </div>
     </section>
 
     {error && <p role="alert" className="rounded-xl bg-[#fff3ef] px-4 py-3 text-[13px] text-[#a94b37]">{error}</p>}
     {loading && !result ? <div className="grid min-h-56 place-items-center rounded-xl border border-[#dfe6f0] bg-white text-sm text-[#60758b]"><LoaderCircle className="mr-2 animate-spin" size={18}/>Carregando indicados…</div> : result?.items.length === 0 ? <div className="rounded-xl border border-[#dfe6f0] bg-white"><EmptyState title="Nenhum indicado encontrado" detail={search || filterId !== "all" ? "Ajuste o filtro ou a busca para ver outros resultados." : "Os indicados atribuídos aparecerão depois da importação do Data Crazy."}/></div> : result ? <>
-      <div className="overflow-hidden rounded-xl border border-[#dfe6f0] bg-white md:hidden" aria-busy={loading}>
-        <div className="divide-y divide-[#e6ebf2]">{result.items.map((item) => {
+      <div className="overflow-hidden rounded-xl border border-[#dfe6f0] bg-white 2xl:hidden" aria-busy={loading}>
+        <div className="grid lg:grid-cols-2">{result.items.map((item) => {
           const progress = Math.min(100, Math.round(Number(item.routes) / item.route_goal * 100));
-          return <article key={item.uuid} className="p-4">
-            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="break-words text-[13px] font-bold text-[#203b58]">{item.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-[#8191a2]">UUID · {item.uuid}</div></div><span className="shrink-0 rounded-full bg-[#eaf1fa] px-2.5 py-1 text-xs font-bold text-[#205b9e]">{item.influencer_name}</span></div>
+          return <article key={item.uuid} className="border-b border-[#e6ebf2] p-4 lg:odd:border-r lg:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><div className="courier-name text-[16px] font-bold leading-5 text-[#203b58]">{item.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-[#8191a2]">UUID · {item.uuid}</div></div><span className="shrink-0 rounded-full bg-[#eaf1fa] px-2.5 py-1 text-xs font-bold text-[#205b9e]">{item.influencer_name}</span></div>
             <div className="mt-3 text-xs text-[#405b76]">{item.region || "Região não informada"}</div>
             <div className="mt-1 flex items-center gap-1 text-xs text-[#60758b]"><CalendarDays size={13}/>Liberação: {fmtDate(item.released_at)}</div>
-            <div className="mt-1 break-words text-xs text-[#60758b]">Telefone · {item.phone || "indisponível"}<span className="px-1.5 text-[#bdc8d4]">·</span>CPF · {item.cpf || "indisponível"}</div>
             <div className="mt-3"><div className="flex items-center justify-between gap-3 text-xs"><span className="font-semibold tabular-nums text-[#29435e]">{fmtNumber(Number(item.routes))} / {fmtNumber(item.route_goal)} corridas</span><span className="font-bold tabular-nums text-[#205b9e]">{progress}%</span></div><div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e8eef7]"><div className="h-full rounded-full bg-[#2f6fc2]" style={{ width: `${progress}%` }}/></div></div>
             <div className="mt-3 flex items-center justify-between gap-2"><span className={`text-xs font-bold ${item.prize_unlocked ? "text-[#267353]" : "text-[#60758b]"}`}>{item.prize_unlocked ? "Prêmio liberado" : `Faltam ${fmtNumber(item.routes_remaining)} corridas`}</span><span className="text-xs font-bold text-[#29435e]">{fmtMoney(item.prize_cents)}</span></div>
+            <details className="courier-contact mt-3 border-t border-[#e6ebf2] pt-2"><summary className="min-h-10 cursor-pointer py-2 text-xs font-bold text-[#205b9e]">Ver contato</summary><div className="pb-1 text-xs leading-5 text-[#536c84]">Telefone · {item.phone || "indisponível"}<br/>CPF · {item.cpf || "indisponível"}</div></details>
           </article>;
         })}</div>
       </div>
 
-      <div className="hidden overflow-hidden rounded-xl border border-[#dfe6f0] bg-white md:block" aria-busy={loading}>
-        <div className="overflow-x-auto"><table className="w-full min-w-[1040px] border-collapse text-left">
-          <thead className="bg-[#f7faff] text-xs font-bold uppercase tracking-[.08em] text-[#71859b]"><tr><th className="px-4 py-3">Entregador</th><th className="px-4 py-3">Influenciador</th><th className="px-4 py-3">Contato</th><th className="px-4 py-3">Corridas e progresso</th><th className="px-4 py-3">Prêmio</th></tr></thead>
+      <div className="hidden overflow-hidden rounded-xl border border-[#dfe6f0] bg-white 2xl:block" aria-busy={loading}>
+        <div className="overflow-x-auto"><table className="w-full min-w-[920px] border-collapse text-left">
+          <thead className="bg-[#f7faff] text-xs font-bold uppercase tracking-[.08em] text-[#71859b]"><tr><th className="px-4 py-3">Entregador</th><th className="px-4 py-3">Influenciador</th><th className="px-4 py-3">Corridas e progresso</th><th className="px-4 py-3">Prêmio</th></tr></thead>
           <tbody className="divide-y divide-[#edf1f6]">{result.items.map((item) => {
             const progress = Math.min(100, Math.round(Number(item.routes) / item.route_goal * 100));
-            return <tr key={item.uuid} className="align-top hover:bg-[#fbfcfe]"><td className="max-w-[250px] px-4 py-3.5"><div className="text-[13px] font-semibold text-[#203b58]">{item.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-[#8191a2]">{item.uuid}</div><div className="mt-1 text-xs text-[#60758b]">{item.region || "Região não informada"}</div><div className="mt-1 text-xs text-[#60758b]">Liberação: {fmtDate(item.released_at)}</div></td><td className="px-4 py-3.5 text-xs font-semibold text-[#405b76]">{item.influencer_name}</td><td className="px-4 py-3.5 text-xs leading-5 text-[#536c84]">{item.phone || "Telefone indisponível"}<div>{item.cpf ? `CPF ${item.cpf}` : "CPF indisponível"}</div></td><td className="w-[240px] px-4 py-3.5"><div className="flex justify-between gap-3 text-xs"><span className="font-semibold tabular-nums text-[#29435e]">{fmtNumber(Number(item.routes))} / {fmtNumber(item.route_goal)}</span><span className="font-bold tabular-nums text-[#205b9e]">{progress}%</span></div><div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e8eef7]"><div className="h-full rounded-full bg-[#2f6fc2]" style={{ width: `${progress}%` }}/></div><div className="mt-1 text-xs text-[#60758b]">{item.prize_unlocked ? "Meta atingida" : `Faltam ${fmtNumber(item.routes_remaining)} corridas`}</div></td><td className="px-4 py-3.5"><div className="text-xs font-bold text-[#29435e]">{fmtMoney(item.prize_cents)}</div><div className={`mt-1 text-xs font-semibold ${item.prize_unlocked ? "text-[#267353]" : "text-[#8191a2]"}`}>{item.prize_unlocked ? "Liberado" : "Em progresso"}</div></td></tr>;
+            return <tr key={item.uuid} className="align-top hover:bg-[#fbfcfe]"><td className="max-w-[310px] px-4 py-4"><div className="courier-name text-[16px] font-bold leading-5 text-[#203b58]">{item.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-[#8191a2]">{item.uuid}</div><div className="mt-1 text-xs text-[#60758b]">{item.region || "Região não informada"} · Liberação: {fmtDate(item.released_at)}</div><details className="courier-contact mt-1"><summary className="min-h-10 cursor-pointer py-2 text-xs font-bold text-[#205b9e]">Ver contato</summary><div className="pb-1 text-xs leading-5 text-[#536c84]">Telefone · {item.phone || "indisponível"}<br/>CPF · {item.cpf || "indisponível"}</div></details></td><td className="px-4 py-4 text-[13px] font-semibold text-[#405b76]">{item.influencer_name}</td><td className="w-[260px] px-4 py-4"><div className="flex justify-between gap-3 text-xs"><span className="font-semibold tabular-nums text-[#29435e]">{fmtNumber(Number(item.routes))} / {fmtNumber(item.route_goal)}</span><span className="font-bold tabular-nums text-[#205b9e]">{progress}%</span></div><div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e8eef7]"><div className="h-full rounded-full bg-[#2f6fc2]" style={{ width: `${progress}%` }}/></div><div className="mt-1 text-xs text-[#60758b]">{item.prize_unlocked ? "Meta atingida" : `Faltam ${fmtNumber(item.routes_remaining)} corridas`}</div></td><td className="px-4 py-4"><div className="text-[13px] font-bold text-[#29435e]">{fmtMoney(item.prize_cents)}</div><div className={`mt-1 text-xs font-semibold ${item.prize_unlocked ? "text-[#267353]" : "text-[#8191a2]"}`}>{item.prize_unlocked ? "Liberado" : "Em progresso"}</div></td></tr>;
           })}</tbody>
         </table></div>
       </div>
