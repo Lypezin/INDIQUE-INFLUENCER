@@ -5,6 +5,11 @@ colors:
   primary: "#185aa9"
   primary-hover: "#114886"
   primary-deep: "#123f78"
+  focus-surface: "#dbeafe"
+  selection-background: "#b9d7fa"
+  selection-foreground: "#102e57"
+  selection-background-dark: "#123f78"
+  selection-foreground-dark: "#ffffff"
   ink: "#172a40"
   heading: "#203b58"
   ink-strong: "#29435e"
@@ -59,10 +64,15 @@ typography:
     courier-name: "17px"
     section-title: "16px to 18px"
     page-title: "clamp(28px, 6vw, 34px)"
+    login-title: "clamp(1.75rem, 6vw, 2rem)"
+    login-display: "clamp(2.75rem, 4vw, 4.5rem)"
+    metric-value: "25px"
+    highlight-metric: "30px"
 rounded:
   control: "8px"
   surface: "12px"
   meter: "999px"
+  scrollbar-thumb: "6px"
 spacing:
   compact: "8px"
   regular: "16px"
@@ -83,6 +93,12 @@ components:
     purpose: "Explica substituição da base antes de iniciar coleta completa."
   review-assignment:
     purpose: "Exige botão explícito para salvar atribuição selecionada."
+  performance-preview:
+    purpose: "Mostra até cinco linhas interpretadas antes de somar corridas ao histórico."
+  workspace-load-error:
+    purpose: "Separa falha de carregamento de uma conta ainda sem vínculo e oferece nova tentativa."
+  admin-sidebar:
+    purpose: "Recolhe a navegação no desktop sem remover os nomes acessíveis dos destinos."
 ---
 
 # Design System: Indique e Ganhe
@@ -101,7 +117,7 @@ Títulos curtos e diretos. Números de corridas, metas e valores usam algarismos
 
 ## Layout
 
-No celular, o progresso dos entregadores aparece antes dos totais. Campos e ações têm alvo de toque de pelo menos 44 px. A lista revela dados pessoais somente ao expandir uma linha. No desktop, a administração usa navegação lateral e painéis mais largos.
+No celular, o progresso dos entregadores aparece antes dos totais. Campos e ações têm alvo de toque de pelo menos 44 px. A lista revela dados pessoais somente ao expandir uma linha. No desktop, a administração usa navegação lateral de 250 px, recolhível para 76 px, e painéis mais largos. Em larguras menores, a navegação lateral cede espaço à barra superior e ao menu móvel.
 
 ## Elevation & Depth
 
@@ -128,3 +144,7 @@ Botões primários são azuis com texto branco; foco visível usa contorno azul.
 - **Tokens semânticos:** `heading`, `ink-strong`, `ink-mid`, `brand-strong`, `brand-soft`, `surface-subtle`, `border-subtle`, `progress-track`, `progress-fill` e estados `status-success`, `status-warning` e `status-danger` mantêm a mesma intenção nos temas claro e escuro.
 - **Movimento:** transições de interação permanecem curtas; a barra de progresso usa 280 ms e menus/detalhes usam entrada discreta. `prefers-reduced-motion` remove o movimento de progresso e reduz as transições.
 - **Acessibilidade:** progresso expõe papel e valor a tecnologias assistivas; avisos de erro e sucesso são anunciados; botões de decisão mantêm área de toque mínima de 44 px.
+- **Métricas:** números recorrentes usam 25 px; a métrica principal de uma área pode usar 30 px. Títulos de login e de página seguem escalas separadas para evitar que um tamanho de destaque vire padrão em todo o painel.
+- **Movimento de navegação:** recolher a barra lateral usa uma transição de grade de 240 ms apenas no desktop. A troca de painel usa uma breve alteração de opacidade; o menu móvel usa opacidade e movimento vertical discreto, reduzido para uma transição curta de opacidade em telas estreitas. `prefers-reduced-motion` remove o movimento espacial e a animação do painel; o conteúdo continua aparecendo imediatamente.
+- **Prévia de Performance:** antes de confirmar a soma, a conferência mostra até cinco entregadores, UUIDs, praças e quantidades interpretados do arquivo. Os dados sensíveis de contato continuam fora dessa tabela.
+- **Erros de carregamento:** uma falha de rede/consulta mostra tentar novamente e sair; o formulário de código só aparece quando o acesso não está vinculado e não houve falha de carregamento.

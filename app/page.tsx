@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ChangeEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent, type FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
-  ArrowDownUp, ArrowRight, Award, BarChart3, Check, CheckCircle2, ChevronDown,
+  ArrowDownUp, ArrowRight, Award, BarChart3, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   CircleAlert, ClipboardList, CloudUpload, Download, Eye, EyeOff, FileSpreadsheet,
   CalendarDays, Gift, History, LoaderCircle, LogOut, Mail, MapPin, Menu, Moon, RefreshCw, Search, ShieldCheck, Sun, UserRound, Users, XCircle,
 } from "lucide-react";
@@ -130,6 +130,8 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const [theme, setTheme] = useState<Theme>("light");
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const [search, setSearch] = useState("");
   const [onlyUnlocked, setOnlyUnlocked] = useState(false);
 
@@ -151,6 +153,21 @@ export default function Home() {
     try { window.localStorage.setItem(`indique-ganhe:admin-tab:${profile.email.trim().toLowerCase()}`, tab); }
     catch { /* The current view still works when browser storage is unavailable. */ }
   }, [profile]);
+
+  const closeMobileMenu = useCallback(() => {
+    setMobileMenu(false);
+    const menuButton = mobileMenuButtonRef.current;
+    if (menuButton?.getClientRects().length) menuButton.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!mobileMenu) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeMobileMenu();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileMenu, closeMobileMenu]);
 
   const updateProfileDisplayName = useCallback((userId: string, displayName: string | null) => {
     setProfile((current) => current?.user_id === userId ? { ...current, display_name: displayName } : current);
@@ -237,9 +254,12 @@ export default function Home() {
   if (loading && !session) return <Splash />;
   if (!session) return <Login supabase={supabase} />;
   if (loading && !profile) return <Splash />;
-  if (!profile) return session
-    ? <AccessPending email={session.user.email ?? ""} error={loadError} onSignOut={() => void supabase.auth.signOut()} />
-    : <Login supabase={supabase} initialError={loadError || "Sua conta ainda não está vinculada. Peça ao administrador que envie um convite."} />;
+  if (profile?.role === "admin" && !overview && loadError) {
+    return <WorkspaceLoadError onRetry={() => void loadWorkspace()} onSignOut={() => void supabase.auth.signOut()} />;
+  }
+  if (!profile) return loadError
+    ? <WorkspaceLoadError onRetry={() => void loadWorkspace()} onSignOut={() => void supabase.auth.signOut()} />
+    : <AccessPending email={session.user.email ?? ""} onSignOut={() => void supabase.auth.signOut()} />;
 
   const isAdmin = profile.role === "admin";
   const visibleTabs = isAdmin ? adminTabs.filter((tab) => tab.id !== "profile") : adminTabs.slice(0, 1);
@@ -250,21 +270,26 @@ export default function Home() {
 
   return (
     <main className="portal-shell min-h-screen bg-background text-foreground">
-      <div className="mx-auto flex min-h-screen max-w-[1600px]">
-        <aside className="portal-sidebar sticky top-0 hidden h-screen w-[250px] shrink-0 self-start flex-col overflow-y-auto border-r border-border bg-white px-5 py-7 lg:flex">
-          <Brand />
-          <nav aria-label="Navegação principal" className="mt-11 space-y-1">
-            <div className="px-3.5 pb-2 text-xs font-bold uppercase tracking-[.12em] text-[#5b7086]">Acompanhar</div>
-            {primaryTabs.map((tab) => <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => selectTab(tab.id)} />)}
-            {managementTabs.length > 0 && <div className="px-3.5 pb-2 pt-7 text-xs font-bold uppercase tracking-[.12em] text-[#5b7086]">Administrar</div>}
-            {managementTabs.map((tab) => <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => selectTab(tab.id)} />)}
+      <div className={`portal-layout mx-auto min-h-screen max-w-[1600px] ${isAdmin ? "has-sidebar" : ""} ${sidebarCollapsed ? "is-collapsed" : ""}`}>
+        {isAdmin && <aside className={`portal-sidebar sticky top-0 hidden h-screen min-w-0 self-start flex-col overflow-y-auto border-r border-border bg-white px-4 py-7 lg:flex ${sidebarCollapsed ? "is-collapsed" : ""}`}>
+          <div className="portal-sidebar-head">
+            <Brand compact={sidebarCollapsed} />
+            <button type="button" onClick={() => setSidebarCollapsed((collapsed) => !collapsed)} aria-label={sidebarCollapsed ? "Expandir navegação" : "Recolher navegação"} aria-expanded={!sidebarCollapsed} aria-controls="admin-primary-navigation" title={sidebarCollapsed ? "Expandir navegação" : "Recolher navegação"} className="portal-sidebar-toggle">
+              {sidebarCollapsed ? <ChevronRight size={18} aria-hidden="true" /> : <ChevronLeft size={18} aria-hidden="true" />}
+            </button>
+          </div>
+          <nav id="admin-primary-navigation" aria-label="Navegação principal" className="mt-7 space-y-1">
+            <div className={`px-3.5 pb-2 text-xs font-bold uppercase tracking-[.12em] text-muted-foreground ${sidebarCollapsed ? "sr-only" : ""}`}>Acompanhar</div>
+            {primaryTabs.map((tab) => <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} collapsed={sidebarCollapsed} onClick={() => selectTab(tab.id)} />)}
+            {managementTabs.length > 0 && <div className={`px-3.5 pb-2 pt-7 text-xs font-bold uppercase tracking-[.12em] text-muted-foreground ${sidebarCollapsed ? "sr-only" : ""}`}>Administrar</div>}
+            {managementTabs.map((tab) => <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} collapsed={sidebarCollapsed} onClick={() => selectTab(tab.id)} />)}
           </nav>
-        </aside>
+        </aside>}
 
         <section className="min-w-0 flex-1">
           <header className="portal-topbar sticky top-0 z-20 flex h-[76px] items-center justify-between gap-2 border-b border-border bg-white px-3 sm:px-8 lg:px-10">
             <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-              {isAdmin && <button onClick={() => setMobileMenu(!mobileMenu)} className="flex size-11 items-center justify-center rounded-lg text-[#526981] hover:bg-[#f0f4f9] lg:hidden" aria-label={mobileMenu ? "Fechar menu" : "Abrir menu"} aria-expanded={mobileMenu} aria-controls={mobileMenu ? "admin-mobile-navigation" : undefined}><Menu size={21} /></button>}
+              {isAdmin && <button ref={mobileMenuButtonRef} onClick={() => setMobileMenu(!mobileMenu)} className="flex size-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-subtle lg:hidden" aria-label={mobileMenu ? "Fechar menu" : "Abrir menu"} aria-expanded={mobileMenu} aria-controls="admin-mobile-navigation"><Menu size={21} aria-hidden="true" /></button>}
               <div className="min-w-0"><div className="truncate text-sm font-semibold sm:text-base">{title}</div><div className="mt-0.5 hidden text-xs text-[#7a8b8e] sm:block">{subtitle}</div></div>
             </div>
             <div className="flex shrink-0 items-center gap-1 sm:gap-3">
@@ -275,7 +300,12 @@ export default function Home() {
             </div>
           </header>
 
-          {mobileMenu && <><button className="mobile-menu-backdrop fixed inset-0 z-20 bg-[#112e53]/20 lg:hidden" aria-label="Fechar menu" onClick={() => setMobileMenu(false)}/><nav id="admin-mobile-navigation" aria-label="Navegação principal" className="mobile-menu-panel fixed inset-x-0 top-[76px] z-30 max-h-[calc(100dvh-76px)] overflow-y-auto border-b border-border bg-white px-4 py-3 shadow-lg lg:hidden"><div className="grid gap-1 sm:grid-cols-2">{visibleTabs.map((tab) => <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => { selectTab(tab.id); setMobileMenu(false); }} />)}</div></nav></>}
+          {isAdmin && <div className={`mobile-menu-layer lg:hidden ${mobileMenu ? "is-open" : ""}`} aria-hidden={!mobileMenu} inert={!mobileMenu}>
+            <button className="mobile-menu-backdrop fixed inset-0 z-20 bg-[#112e53]/20" aria-label="Fechar menu" onClick={closeMobileMenu} />
+            <nav id="admin-mobile-navigation" aria-label="Navegação principal" className="mobile-menu-panel fixed inset-x-0 top-[76px] z-30 max-h-[calc(100dvh-76px)] overflow-y-auto border-b border-border bg-white px-4 py-3 shadow-lg">
+              <div className="grid gap-1 sm:grid-cols-2">{visibleTabs.map((tab) => <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => { selectTab(tab.id); closeMobileMenu(); }} />)}</div>
+            </nav>
+          </div>}
           <div className="mx-auto max-w-[1320px] px-4 pb-12 pt-7 sm:px-8 sm:pt-9 lg:px-10">
             {loadError && <div className="mb-5 flex items-start gap-3 rounded-xl border border-[#f2d8bd] bg-[#fffaf4] p-4 text-sm text-[#84572f]"><CircleAlert size={18} className="mt-0.5 shrink-0" />{loadError}</div>}
             {!isAdmin ? <InfluencerDashboard referrals={referrals} influencer={influencer} lastImportAt={lastImportAt} search={search} setSearch={setSearch} onlyUnlocked={onlyUnlocked} setOnlyUnlocked={setOnlyUnlocked} /> : (
@@ -288,13 +318,13 @@ export default function Home() {
   );
 }
 
-function Brand() {
-  return <div className="brand-lockup"><img src="/entrego-mark.png" className="size-[2.65rem] shrink-0" alt="Entrego"/><div><div className="brand-name">Indique <span>e Ganhe</span></div><div className="brand-description">Indicações e recompensas</div></div></div>;
+function Brand({ compact = false }: { compact?: boolean }) {
+  return <div className="brand-lockup"><img src="/entrego-mark.png" className="size-[2.65rem] shrink-0" alt="" aria-hidden="true"/><div className={compact ? "sr-only" : "brand-copy"}><div className="brand-name">Indique <span>e Ganhe</span></div><div className="brand-description">Programa de indicações da Entrego</div></div></div>;
 }
 
-function NavButton({ tab, active, onClick }: { tab: { id: TabId; label: string; icon: typeof BarChart3 }; active: boolean; onClick: () => void }) {
+function NavButton({ tab, active, onClick, collapsed = false }: { tab: { id: TabId; label: string; icon: typeof BarChart3 }; active: boolean; onClick: () => void; collapsed?: boolean }) {
   const Icon = tab.icon;
-  return <button type="button" onClick={onClick} aria-current={active ? "page" : undefined} className={`portal-nav-button flex min-h-11 w-full items-center gap-3 rounded-lg px-3.5 py-2.5 text-left text-sm transition ${active ? "bg-brand-soft font-bold text-brand-strong" : "font-semibold text-muted-foreground hover:bg-[#f5f8fc] hover:text-[#24444a]"}`}><Icon size={17} strokeWidth={1.8} />{tab.label}{active && <span className="ml-auto size-1.5 rounded-full bg-progress-fill" />}</button>;
+  return <button type="button" onClick={onClick} aria-label={tab.label} title={collapsed ? tab.label : undefined} aria-current={active ? "page" : undefined} className={`portal-nav-button relative flex min-h-11 w-full items-center gap-3 rounded-lg py-2.5 text-left text-sm transition ${collapsed ? "justify-center px-2" : "px-3.5"} ${active ? "bg-brand-soft font-bold text-brand-strong" : "font-semibold text-muted-foreground hover:bg-surface-subtle hover:text-ink-strong"}`}><Icon aria-hidden="true" size={17} strokeWidth={1.8} /><span className={collapsed ? "sr-only" : ""}>{tab.label}</span>{active && <span aria-hidden="true" className={`${collapsed ? "absolute right-1.5 top-1.5" : "ml-auto"} size-1.5 rounded-full bg-progress-fill`} />}</button>;
 }
 
 function Splash() {
@@ -365,7 +395,7 @@ function Login({ supabase, initialError = "" }: { supabase: NonNullable<ReturnTy
   </main>;
 }
 
-function AccessPending({ email, error, onSignOut }: { email: string; error: string; onSignOut: () => void }) {
+function AccessPending({ email, onSignOut }: { email: string; onSignOut: () => void }) {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [claimError, setClaimError] = useState("");
@@ -377,7 +407,21 @@ function AccessPending({ email, error, onSignOut }: { email: string; error: stri
     } catch (cause) { setClaimError(cause instanceof Error ? cause.message : "Não foi possível ativar esta conta."); }
     finally { setBusy(false); }
   }
-  return <main className="grid min-h-screen place-items-center bg-background p-5"><div className="w-full max-w-md rounded-xl bg-white p-6 shadow-sm sm:p-8"><Brand/><h1 className="mt-8 text-2xl font-semibold">Ative sua conta</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Você entrou com <strong>{email}</strong>. Insira o código fornecido pela administração para vincular suas indicações.</p><form onSubmit={claim} className="login-form"><label>Código de ativação<input required autoComplete="one-time-code" value={code} onChange={(event)=>setCode(event.target.value)} placeholder="Código recebido da administração"/></label>{(claimError || error) && <p role="alert" className="form-error">{claimError || error}</p>}<button disabled={busy} className="primary-action">{busy ? "Ativando…" : "Ativar conta"}</button></form><button onClick={onSignOut} className="mt-4 min-h-11 text-sm font-semibold text-brand-strong">Sair desta conta</button></div></main>;
+  return <main className="grid min-h-screen place-items-center bg-background p-5"><div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-sm sm:p-8"><Brand/><h1 className="mt-8 text-2xl font-semibold">Ative sua conta</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Você entrou com <strong>{email}</strong>. Insira o código fornecido pela administração para vincular suas indicações.</p><form onSubmit={claim} className="login-form"><label>Código de ativação<input required autoComplete="one-time-code" value={code} onChange={(event)=>setCode(event.target.value)} placeholder="Código recebido da administração"/></label>{claimError && <p role="alert" className="form-error">{claimError}</p>}<button disabled={busy} className="primary-action">{busy ? "Ativando…" : "Ativar conta"}</button></form><button onClick={onSignOut} className="mt-4 min-h-11 text-sm font-semibold text-brand-strong">Sair desta conta</button></div></main>;
+}
+
+function WorkspaceLoadError({ onRetry, onSignOut }: { onRetry: () => void; onSignOut: () => void }) {
+  return <main className="grid min-h-screen place-items-center bg-background p-5">
+    <section className="w-full max-w-md rounded-xl border border-border bg-card p-6 sm:p-8">
+      <Brand />
+      <div role="alert" className="mt-8 flex items-start gap-3 rounded-lg bg-status-danger-surface p-4 text-sm leading-5 text-status-danger">
+        <CircleAlert size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+        <div><h1 className="font-bold">Não foi possível carregar seu painel.</h1><p className="mt-1">Verifique sua conexão e tente novamente. Se o problema continuar, fale com a administração.</p></div>
+      </div>
+      <button type="button" onClick={onRetry} className="primary-action mt-5 w-full">Tentar novamente <RefreshCw size={16} aria-hidden="true" /></button>
+      <button type="button" onClick={onSignOut} className="mt-2 min-h-11 w-full text-sm font-semibold text-brand-strong">Sair desta conta</button>
+    </section>
+  </main>;
 }
 
 function ResetPassword({ supabase }: { supabase: NonNullable<ReturnType<typeof getSupabase>> }) {
@@ -390,7 +434,7 @@ function ResetPassword({ supabase }: { supabase: NonNullable<ReturnType<typeof g
     setBusy(false);
     if (updateError) setError(updateError.message); else setDone(true);
   }
-  return <main className="grid min-h-screen place-items-center bg-background p-5"><section className="w-full max-w-[410px] rounded-xl border border-border bg-white p-7 shadow-[0_20px_70px_-40px_#234b43]"><Brand/><h1 className="mt-8 text-2xl font-bold">Criar nova senha</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Escolha uma senha para entrar no seu painel.</p>{done?<><div role="status" className="mt-5 rounded-lg bg-status-success-surface p-3 text-xs text-brand-strong">Senha atualizada. Você já pode entrar no portal.</div><button onClick={()=>{window.history.replaceState({},document.title,window.location.pathname);window.location.reload();}} className="mt-4 h-11 rounded-lg bg-primary px-4 text-xs font-bold text-white">Voltar ao painel</button></>:<form onSubmit={submit} className="mt-5 space-y-3"><label className="sr-only" htmlFor="reset-new-password">Nova senha</label><input id="reset-new-password" required minLength={8} autoComplete="new-password" type="password" value={password} onChange={(event)=>setPassword(event.target.value)} placeholder="Nova senha" className="h-11 w-full rounded-lg border border-input px-3 text-sm outline-none focus:border-[#2b6cbb]"/><label className="sr-only" htmlFor="reset-confirm-password">Confirme a nova senha</label><input id="reset-confirm-password" required minLength={8} autoComplete="new-password" type="password" value={confirm} onChange={(event)=>setConfirm(event.target.value)} placeholder="Confirme a nova senha" className="h-11 w-full rounded-lg border border-input px-3 text-sm outline-none focus:border-[#2b6cbb]"/>{error&&<p id="reset-password-error" role="alert" className="rounded-lg bg-status-danger-surface p-3 text-xs text-status-danger">{error}</p>}<button disabled={busy} className="h-11 w-full rounded-lg bg-primary text-xs font-bold text-white disabled:opacity-55">{busy?"Salvando…":"Salvar nova senha"}</button></form>}</section></main>;
+  return <main className="grid min-h-screen place-items-center bg-background p-5"><section className="w-full max-w-[410px] rounded-xl border border-border bg-card p-7 shadow-sm"><Brand/><h1 className="mt-8 text-2xl font-bold">Criar nova senha</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Escolha uma senha para entrar no seu painel.</p>{done?<><div role="status" className="mt-5 rounded-lg bg-status-success-surface p-3 text-xs text-brand-strong">Senha atualizada. Você já pode entrar no portal.</div><button onClick={()=>{window.history.replaceState({},document.title,window.location.pathname);window.location.reload();}} className="mt-4 h-11 rounded-lg bg-primary px-4 text-xs font-bold text-white">Voltar ao painel</button></>:<form onSubmit={submit} className="mt-5 space-y-3"><label className="sr-only" htmlFor="reset-new-password">Nova senha</label><input id="reset-new-password" required minLength={8} autoComplete="new-password" type="password" value={password} onChange={(event)=>setPassword(event.target.value)} placeholder="Nova senha" className="h-11 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground outline-none focus:border-[#2b6cbb]"/><label className="sr-only" htmlFor="reset-confirm-password">Confirme a nova senha</label><input id="reset-confirm-password" required minLength={8} autoComplete="new-password" type="password" value={confirm} onChange={(event)=>setConfirm(event.target.value)} placeholder="Confirme a nova senha" className="h-11 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground outline-none focus:border-[#2b6cbb]"/>{error&&<p id="reset-password-error" role="alert" className="rounded-lg bg-status-danger-surface p-3 text-xs text-status-danger">{error}</p>}<button disabled={busy} className="h-11 w-full rounded-lg bg-primary text-xs font-bold text-white disabled:opacity-55">{busy?"Salvando…":"Salvar nova senha"}</button></form>}</section></main>;
 }
 
 function InfluencerDashboard({ referrals, influencer, lastImportAt, search, setSearch, onlyUnlocked, setOnlyUnlocked }: {
@@ -422,7 +466,7 @@ function InfluencerDashboard({ referrals, influencer, lastImportAt, search, setS
 
 function StatCard({ label, value, icon, sub, color }: { label: string; value: string; icon: React.ReactNode; sub: string; color: "teal" | "blue" | "gold" | "plum" }) {
   const colors = { teal: "bg-brand-soft text-brand-strong", blue: "bg-brand-soft text-[#5375a1]", gold: "bg-[#fff5df] text-[#b17a20]", plum: "bg-[#f4eef9] text-[#8865a3]" };
-  return <div className="stat-card"><div className="flex items-start justify-between gap-3"><div className="text-xs font-semibold leading-5 text-muted-foreground">{label}</div><div className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${colors[color]}`}>{icon}</div></div><div className="mt-3 text-[25px] font-bold tabular-nums tracking-[-.03em] text-heading">{value}</div><div className="mt-1 text-xs text-muted-foreground">{sub}</div></div>;
+  return <div className="stat-card"><div className="flex items-start justify-between gap-3"><div className="text-xs font-semibold leading-5 text-muted-foreground">{label}</div><div className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${colors[color]}`}>{icon}</div></div><div className="metric-value mt-3 text-heading">{value}</div><div className="mt-1 text-xs text-muted-foreground">{sub}</div></div>;
 }
 
 function ReferralRow({ referral }: { referral: Referral }) {
@@ -447,7 +491,7 @@ function AdminDashboard({ activeTab, overview, profile, refresh, onTab, onAdminN
     setRefreshVersion((version) => version + 1);
   }, [refresh]);
   if (!overview) return <div className="grid min-h-64 place-items-center text-sm text-muted-foreground"><LoaderCircle className="mr-2 animate-spin" size={18}/>Carregando área administrativa…</div>;
-  return <div>
+  return <div key={activeTab} className="admin-panel-enter">
     <div className="page-heading mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h1 className="text-[28px] font-bold tracking-[-.03em] text-heading sm:text-[32px]">{adminTabs.find((tab) => tab.id === activeTab)?.label}</h1><p className="mt-1.5 max-w-[65ch] text-sm leading-5 text-muted-foreground">{adminTabDescriptions[activeTab]}</p></div><button type="button" onClick={() => void refreshPage()} className="secondary-action inline-flex h-11 w-fit shrink-0 items-center gap-2 rounded-lg border border-input bg-white px-3.5 text-sm font-semibold text-ink-mid hover:bg-surface-subtle"><RefreshCw size={15}/>Atualizar dados</button></div>
     {activeTab === "dashboard" && <AdminHome overview={overview} onTab={onTab}/>}
     {activeTab === "referrals" && <AdminReferralsPanel influencers={overview.influencers}/>}
@@ -709,7 +753,7 @@ function ImportPanel({ overview, refresh }: { overview: AdminOverview; refresh: 
   return <div><PerformanceCoveragePanel coverage={coverage} loading={coverageLoading} error={coverageError} onRetry={() => void loadCoverage()}/><div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(280px,.75fr)]"><section className="portal-panel p-5 sm:p-6"><div className="flex items-start gap-3"><div className="flex size-10 items-center justify-center rounded-xl bg-brand-soft text-brand-strong"><CloudUpload size={19}/></div><div><h2 className="text-base font-bold">Importar Performance</h2><p className="mt-1 text-sm text-muted-foreground">Adiciona as corridas desta importação ao acumulado existente.</p></div></div>
     <label className="mt-6 flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#c7d5e6] bg-[#f8fbff] px-4 py-6 text-center transition hover:border-[#2b6cbb] hover:bg-[#f5f9fe]"><input className="sr-only" type="file" accept=".csv,.xlsx,.xls" onChange={(event) => void chooseFile(event)}/><div className="flex size-10 items-center justify-center rounded-xl bg-white text-[#245b9b] shadow-sm">{busy && !preview ? <LoaderCircle size={19} className="animate-spin"/> : <Download size={19}/>}</div><span className="mt-3 text-sm font-bold">Selecione um arquivo para conferir</span><span className="mt-1 text-xs text-[#697f94]">CSV, .xlsx ou .xls · até 25 MB e 100 mil linhas · confira antes de importar</span></label>
     {error && <p role="alert" className="mt-4 rounded-xl bg-status-danger-surface px-3.5 py-3 text-xs text-status-danger">{error}</p>}{message && <p role="status" className="mt-4 rounded-xl bg-status-success-surface px-3.5 py-3 text-xs text-brand-strong">{message}</p>}
-    {preview && <div className="mt-5 rounded-xl border border-[#e5ebf4] bg-white p-4"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><div className="truncate text-sm font-bold">{preview.fileName}</div><div className="mt-1 text-xs text-muted-foreground">SHA-256 · {preview.fileHash.slice(0, 18)}…</div></div><span className="rounded-full bg-brand-soft px-2.5 py-1 text-xs font-bold text-brand-strong">Pronto para importar</span></div>{preview.dataCoverage && <div className="mt-4 flex flex-col gap-1 rounded-xl bg-[#f1f6fd] px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-xs font-semibold text-muted-foreground">Datas encontradas na planilha (coluna A)</div><div className="mt-1 text-sm font-bold tabular-nums text-heading">{fmtDateRange(preview.dataCoverage.firstDate, preview.dataCoverage.lastDate)}</div></div><div className="text-xs text-muted-foreground">{fmtNumber(preview.dataCoverage.cities.length)} cidades · {fmtNumber(preview.dataCoverage.rowCount)} linhas válidas</div></div>}<div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{Object.entries(preview.metrics).slice(0, 4).map(([label, value]) => <div key={label} className="rounded-lg bg-surface-subtle px-3 py-2"><div className="text-xs text-[#697f94]">{label.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)}</div><div className="mt-1 text-sm font-bold">{fmtNumber(value)}</div></div>)}</div>{preview.warnings.length > 0 && <div className="mt-4 space-y-1.5 rounded-lg bg-status-warning-surface p-3 text-xs leading-4 text-[#8a6532]">{preview.warnings.map((warning) => <div key={warning} className="flex gap-2"><CircleAlert size={13} className="mt-0.5 shrink-0"/>{warning}</div>)}</div>}{duplicate && <div className="mt-4 rounded-lg border border-[#f1d9ae] bg-status-warning-surface p-3 text-sm leading-5 text-status-warning">Este arquivo já foi importado antes. Somar novamente pode duplicar corridas. Você pode atualizar somente o intervalo histórico, sem alterar o acumulado.</div>}{busy && <div className="route-meter mt-4" role="progressbar" aria-label="Progresso da importação de Performance" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><div className="route-meter-fill" style={{transform:`scaleX(${progress / 100})`}}/></div>}<div className="mt-4 flex flex-wrap items-center justify-end gap-2"><button onClick={() => { if (batchId) void callAdminApi("import-cancel", { batchId }).catch(() => undefined); setBatchId(""); setPreview(null); setDuplicate(false); }} disabled={busy} className="h-11 rounded-lg px-3 text-sm font-semibold text-muted-foreground hover:bg-[#f6f8f7]">Cancelar</button>{duplicate && <button onClick={() => void updateCoverageOnly()} disabled={busy} className="inline-flex h-11 items-center gap-2 rounded-lg border border-[#c7d5e6] bg-white px-4 text-sm font-bold text-brand-strong hover:bg-[#f5f9fe] disabled:opacity-55">{busy ? <LoaderCircle size={14} className="animate-spin"/> : <CalendarDays size={14}/>} Atualizar período sem somar</button>}<button onClick={() => void importFile(duplicate)} disabled={busy} className="inline-flex h-11 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-bold text-white hover:bg-primary-hover disabled:opacity-55">{busy ? <LoaderCircle size={14} className="animate-spin"/> : <Check size={14}/>} {duplicate ? "Somar corridas novamente" : "Adicionar ao acumulado"}</button></div></div>}
+    {preview && <div className="mt-5 rounded-xl border border-[#e5ebf4] bg-white p-4"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><div className="truncate text-sm font-bold">{preview.fileName}</div><div className="mt-1 text-xs text-muted-foreground">SHA-256 · {preview.fileHash.slice(0, 18)}…</div></div><span className="rounded-full bg-brand-soft px-2.5 py-1 text-xs font-bold text-brand-strong">Pronto para importar</span></div>{preview.dataCoverage && <div className="mt-4 flex flex-col gap-1 rounded-xl bg-[#f1f6fd] px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-xs font-semibold text-muted-foreground">Datas encontradas na planilha (coluna A)</div><div className="mt-1 text-sm font-bold tabular-nums text-heading">{fmtDateRange(preview.dataCoverage.firstDate, preview.dataCoverage.lastDate)}</div></div><div className="text-xs text-muted-foreground">{fmtNumber(preview.dataCoverage.cities.length)} cidades · {fmtNumber(preview.dataCoverage.rowCount)} linhas válidas</div></div>}<div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{Object.entries(preview.metrics).slice(0, 4).map(([label, value]) => <div key={label} className="rounded-lg bg-surface-subtle px-3 py-2"><div className="text-xs text-[#697f94]">{label.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)}</div><div className="mt-1 text-sm font-bold">{fmtNumber(value)}</div></div>)}</div><section aria-labelledby="performance-sample-title" className="mt-4 overflow-hidden rounded-lg border border-border-subtle"><div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5"><h3 id="performance-sample-title" className="text-sm font-bold text-heading">Conferência das linhas interpretadas</h3><span className="text-xs text-muted-foreground">Mostrando {fmtNumber(Math.min(5, preview.rows.length))} de {fmtNumber(preview.rows.length)} linhas válidas</span></div><div className="overflow-x-auto"><table className="min-w-[620px] w-full text-left text-xs"><thead className="bg-surface-subtle font-semibold text-muted-foreground"><tr><th scope="col" className="px-3 py-2">Entregador</th><th scope="col" className="px-3 py-2">UUID</th><th scope="col" className="px-3 py-2">Praça</th><th scope="col" className="px-3 py-2 text-right">Corridas</th></tr></thead><tbody className="divide-y divide-border-subtle">{preview.rows.slice(0, 5).map((row, index) => <tr key={`${row.uuid}-${index}`}><td className="max-w-40 truncate px-3 py-2 font-semibold text-ink-strong" title={row.name}>{row.name || "Nome não informado"}</td><td className="max-w-52 break-all px-3 py-2 text-muted-foreground">{row.uuid}</td><td className="max-w-36 truncate px-3 py-2 text-ink-mid" title={row.region}>{row.region || "Praça não informada"}</td><td className="px-3 py-2 text-right font-bold tabular-nums text-heading">{fmtNumber(row.routes)}</td></tr>)}</tbody></table></div></section>{preview.warnings.length > 0 && <div className="mt-4 space-y-1.5 rounded-lg bg-status-warning-surface p-3 text-xs leading-4 text-[#8a6532]">{preview.warnings.map((warning) => <div key={warning} className="flex gap-2"><CircleAlert size={13} className="mt-0.5 shrink-0"/>{warning}</div>)}</div>}{duplicate && <div className="mt-4 rounded-lg border border-[#f1d9ae] bg-status-warning-surface p-3 text-sm leading-5 text-status-warning">Este arquivo já foi importado antes. Somar novamente pode duplicar corridas. Você pode atualizar somente o intervalo histórico, sem alterar o acumulado.</div>}{busy && <div className="route-meter mt-4" role="progressbar" aria-label="Progresso da importação de Performance" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><div className="route-meter-fill" style={{transform:`scaleX(${progress / 100})`}}/></div>}<div className="mt-4 flex flex-wrap items-center justify-end gap-2"><button onClick={() => { if (batchId) void callAdminApi("import-cancel", { batchId }).catch(() => undefined); setBatchId(""); setPreview(null); setDuplicate(false); }} disabled={busy} className="h-11 rounded-lg px-3 text-sm font-semibold text-muted-foreground hover:bg-[#f6f8f7]">Cancelar</button>{duplicate && <button onClick={() => void updateCoverageOnly()} disabled={busy} className="inline-flex h-11 items-center gap-2 rounded-lg border border-[#c7d5e6] bg-white px-4 text-sm font-bold text-brand-strong hover:bg-[#f5f9fe] disabled:opacity-55">{busy ? <LoaderCircle size={14} className="animate-spin"/> : <CalendarDays size={14}/>} Atualizar período sem somar</button>}<button onClick={() => void importFile(duplicate)} disabled={busy} className="inline-flex h-11 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-bold text-white hover:bg-primary-hover disabled:opacity-55">{busy ? <LoaderCircle size={14} className="animate-spin"/> : <Check size={14}/>} {duplicate ? "Somar corridas novamente" : "Adicionar ao acumulado"}</button></div></div>}
   </section><div className="space-y-4"><section className="rounded-xl border border-border bg-white p-5"><h3 className="text-sm font-bold">Mapeamento automático</h3><div className="mt-4 space-y-3 text-sm text-muted-foreground">{[["Data do período", "A · Data do registro"], ["UUID", "F · Identificador"], ["Entregador", "G · Nome"], ["Praça", "H · Região"], ["Corridas", "R · Pedidos aceitos e concluídos"]].map(([a,b])=><div key={a} className="flex justify-between gap-3 border-b border-[#edf1f6] pb-2.5 last:border-0 last:pb-0"><span>{a}</span><span className="text-right font-semibold text-ink-strong">{b}</span></div>)}</div></section><section className="rounded-xl bg-brand-soft p-5"><div className="flex items-center gap-2 text-sm font-bold text-[#266a55]"><ShieldCheck size={15}/>Importação protegida</div><p className="mt-2 text-xs leading-[18px] text-muted-foreground">Cada UUID é somado dentro do arquivo e depois acrescido ao histórico. Reimportações intencionais somam novamente.</p>{lastSame && <div className="mt-3 border-t border-[#dce8f6] pt-3 text-xs text-muted-foreground">Último arquivo: <span className="font-semibold">{lastSame.file_name}</span></div>}</section></div></div></div>;
 }
 
