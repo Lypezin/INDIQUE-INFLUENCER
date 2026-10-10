@@ -3,14 +3,28 @@ name: Indique e Ganhe
 description: Consulta de indicações, corridas e prêmios
 colors:
   primary: "#185aa9"
+  primary-hover: "#114886"
   primary-deep: "#123f78"
   ink: "#172a40"
+  heading: "#203b58"
+  ink-strong: "#29435e"
+  ink-mid: "#405b76"
   muted-ink: "#60758b"
   canvas: "#f6f8fc"
   paper: "#ffffff"
   border: "#dfe6f0"
+  border-subtle: "#e6ebf2"
+  brand-strong: "#205b9e"
+  brand-soft: "#eaf1fa"
+  surface-subtle: "#f7faff"
   progress-track: "#e8eef7"
   progress-fill: "#2f6fc2"
+  status-success: "#267353"
+  status-success-surface: "#eaf2fc"
+  status-warning: "#795c2f"
+  status-warning-surface: "#fff9ed"
+  status-danger: "#a94b37"
+  status-danger-surface: "#fff3ef"
   canvas-dark: "#0c1420"
   paper-dark: "#141e2b"
   surface-dark: "#1a2737"
@@ -38,9 +52,17 @@ typography:
     fontSize: "1rem"
     fontWeight: 450
     lineHeight: 1.5
+  scale:
+    caption: "12px"
+    supporting: "14px"
+    body: "16px"
+    courier-name: "17px"
+    section-title: "16px to 18px"
+    page-title: "clamp(28px, 6vw, 34px)"
 rounded:
   control: "8px"
   surface: "12px"
+  meter: "999px"
 spacing:
   compact: "8px"
   regular: "16px"
@@ -51,6 +73,16 @@ components:
     textColor: "{colors.paper}"
     rounded: "{rounded.control}"
     height: "52px"
+  summary-grid:
+    purpose: "Agrupa indicadores relacionados em uma superfície com divisórias."
+  courier-name:
+    purpose: "Destaca o entregador com 17px, peso forte e contraste de título."
+  route-meter:
+    purpose: "Exibe progresso visual e semântica acessível de valor."
+  sync-confirmation:
+    purpose: "Explica substituição da base antes de iniciar coleta completa."
+  review-assignment:
+    purpose: "Exige botão explícito para salvar atribuição selecionada."
 ---
 
 # Design System: Indique e Ganhe
@@ -88,3 +120,11 @@ Botões primários são azuis com texto branco; foco visível usa contorno azul.
 - **Do** apresentar corridas, meta, corridas restantes e valor do prêmio perto de cada entregador.
 - **Do** avisar que os dados mudam por importação, sem prometer tempo real.
 - **Don't** usar ícones decorativos, frases promocionais vagas ou cartões aninhados para preencher espaço.
+
+## Padrões compartilhados (2026-10-10)
+
+- **Superfícies:** painéis usam fundo de cartão, borda semântica e raio de 12 px. Indicadores relacionados formam um único grupo com divisórias, em vez de cartões soltos.
+- **Texto:** rótulos e metadados usam 12 px; texto auxiliar, 14 px; conteúdo padrão, 16 px; títulos de seção, 16–18 px. O nome do entregador recebe 17 px, peso forte e contraste de título para facilitar a localização em listas densas.
+- **Tokens semânticos:** `heading`, `ink-strong`, `ink-mid`, `brand-strong`, `brand-soft`, `surface-subtle`, `border-subtle`, `progress-track`, `progress-fill` e estados `status-success`, `status-warning` e `status-danger` mantêm a mesma intenção nos temas claro e escuro.
+- **Movimento:** transições de interação permanecem curtas; a barra de progresso usa 280 ms e menus/detalhes usam entrada discreta. `prefers-reduced-motion` remove o movimento de progresso e reduz as transições.
+- **Acessibilidade:** progresso expõe papel e valor a tecnologias assistivas; avisos de erro e sucesso são anunciados; botões de decisão mantêm área de toque mínima de 44 px.
