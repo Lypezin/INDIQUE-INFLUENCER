@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent, type FormEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent, type FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
   ArrowDownUp, ArrowRight, Award, BarChart3, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
@@ -47,6 +47,7 @@ type ImportHistoryEntry = {
 type ImportHistorySummary = { total: number; staging: number; completed: number; failed: number; cancelled: number };
 type ImportHistoryResult = { items: ImportHistoryEntry[]; total: number; summary: ImportHistorySummary };
 type ImportEvent = { id: number; event_type: string; message: string; details: Record<string, unknown>; created_at: string; actor_email: string | null; actor_display_name?: string | null };
+type ImportActivityEntry = ImportEvent & { batch_id: string; kind: "data_crazy" | "performance"; source: "api" | "file" | null; file_name: string };
 type DataCrazySyncRun = {
   id: string; status: "running" | "completed" | "failed"; phase: string;
   processed: number; total: number; metrics: Record<string, number>;
@@ -100,7 +101,7 @@ const adminTabs: { id: TabId; label: string; icon: typeof BarChart3 }[] = [
 const adminTabDescriptions: Record<TabId, string> = {
   dashboard: "Acompanhe a base, as corridas e o que precisa de atenção.",
   referrals: "Entregadores atribuídos, metas e prêmios em um só lugar.",
-  "data-crazy": "Estado da coleta, base publicada e histórico das sincronizações.",
+  "data-crazy": "Base de entregadores, corridas e movimentações registradas.",
   performance: "Some novas corridas ao histórico e acompanhe a cobertura dos dados.",
   reviews: "Resolva entregadores sem atribuição clara.",
   imports: "Consulte cargas, etapas e responsáveis.",
@@ -128,7 +129,7 @@ export default function Home() {
   const recoveryMode = useSyncExternalStore(subscribeRecovery, getRecoverySnapshot, getRecoveryServerSnapshot);
   const [loadError, setLoadError] = useState("");
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
-  const [theme, setTheme] = useState<Theme>("light");
+  const [theme, setTheme] = useState<Theme>("dark");
   const [mobileMenu, setMobileMenu] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
@@ -136,7 +137,10 @@ export default function Home() {
   const [onlyUnlocked, setOnlyUnlocked] = useState(false);
 
   useEffect(() => {
-    try { if (window.localStorage.getItem("indique-ganhe:theme") === "dark") setTheme("dark"); }
+    try {
+      const savedTheme = window.localStorage.getItem("indique-ganhe:theme");
+      if (savedTheme === "light" || savedTheme === "dark") setTheme(savedTheme);
+    }
     catch { /* Theme preference is optional when browser storage is unavailable. */ }
   }, []);
 
@@ -588,14 +592,26 @@ function DataCrazySyncPanel({ overview, refresh, refreshVersion, onTab }: { over
   const progress = run && run.total > 0 ? Math.min(100, Math.round(run.processed / run.total * 100)) : null;
   const statusLabel = run?.status === "running" ? "Em andamento" : run?.status === "completed" ? "Concluída" : "Falhou";
   const monthLabel = run?.status === "running" && run.windowMonth ? ` · ${run.windowMonth.slice(5, 7)}/${run.windowMonth.slice(0, 4)}` : "";
+  const imports = [...overview.imports].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const latestDataCrazy = imports.find((item) => item.kind === "data_crazy" && item.status === "completed") ?? null;
+  const latestPerformance = imports.find((item) => item.kind === "performance" && item.status === "completed") ?? null;
+  const dataCrazyUpdatedAt = run?.status === "completed" && run.completedAt ? run.completedAt : latestDataCrazy?.created_at ?? null;
+  const reviewCount = overview.reviewCount ?? overview.reviews.length;
 
-  return <div className="space-y-4"><div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(280px,.7fr)]">
-    <section className="portal-panel p-5 sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex min-w-0 items-start gap-3"><div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand-strong"><CloudUpload size={19}/></div><div><h2 className="text-base font-bold">Sincronizar Data Crazy</h2><p className="mt-1 max-w-[58ch] text-sm leading-5 text-muted-foreground">Busca os indicados pela API e atualiza a lista quando a coleta terminar.</p></div></div>
+  return <div className="dc-workspace">
+    <section className="dc-sync-card portal-panel" aria-labelledby="dc-sync-title">
+      <div className="dc-sync-topline">
+        <div className="dc-sync-copy">
+          <div className="dc-sync-icon" aria-hidden="true"><CloudUpload size={19}/></div>
+          <div className="min-w-0">
+            <div className="dc-eyebrow">Coleta da base</div>
+            <h2 id="dc-sync-title" className="dc-sync-title">Sincronização Data Crazy</h2>
+            <p className="dc-sync-description">Valide os dados da API e publique a lista atualizada de entregadores.</p>
+          </div>
+        </div>
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <button type="button" disabled={loading || starting || run?.status === "running"} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-bold text-white hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-55">{starting ? <LoaderCircle size={16} className="animate-spin"/> : <CloudUpload size={16}/>}Sincronizar agora</button>
+            <button type="button" disabled={loading || starting || run?.status === "running"} className="dc-sync-button">{starting ? <LoaderCircle size={16} className="animate-spin"/> : <RefreshCw size={16}/>}Sincronizar agora</button>
           </AlertDialogTrigger>
           <AlertDialogContent className="border-border bg-card">
             <AlertDialogHeader>
@@ -611,37 +627,110 @@ function DataCrazySyncPanel({ overview, refresh, refreshVersion, onTab }: { over
         </AlertDialog>
       </div>
 
-      {error && <p role="alert" className="mt-5 rounded-lg bg-status-danger-surface px-3.5 py-3 text-sm leading-5 text-status-danger">{error}</p>}
-      {loading ? <div role="status" className="mt-6 flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle size={16} className="animate-spin"/>Consultando a última sincronização…</div> : !run ? <div className="mt-6 border-t border-[#e5ebf4] pt-5"><p className="text-sm font-semibold">Nenhuma sincronização registrada</p><p className="mt-1 text-sm leading-5 text-muted-foreground">Use “Sincronizar agora” para iniciar a primeira coleta.</p></div> : <div className="mt-6 border-t border-[#e5ebf4] pt-5" aria-live="polite">
-        <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-bold">Última sincronização</p><p className="mt-0.5 text-xs text-muted-foreground">Iniciada em {formatImportTime(run.startedAt)}{run.completedAt ? ` · finalizada em ${formatImportTime(run.completedAt)}` : ""}</p></div><span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${run.status === "completed" ? "bg-status-success-surface text-brand-strong" : run.status === "failed" ? "bg-status-danger-surface text-status-danger" : "bg-[#fff8e8] text-status-warning"}`}>{run.status === "running" ? <LoaderCircle size={14} className="animate-spin"/> : run.status === "completed" ? <CheckCircle2 size={14}/> : <CircleAlert size={14}/>} {statusLabel}</span></div>
-        <div className="mt-5 flex flex-wrap items-baseline justify-between gap-2 text-sm"><span className="font-semibold text-ink-strong">{syncPhaseLabels[run.phase] ?? "Processando dados"}{monthLabel}</span><span className="tabular-nums text-muted-foreground">{fmtNumber(run.processed)}{run.total > 0 ? ` de ${fmtNumber(run.total)}` : ""} registros</span></div>
-        {run.status === "running" && <div className="route-meter mt-2" role="progressbar" aria-label="Andamento da sincronização" aria-valuenow={progress ?? undefined} aria-valuemin={0} aria-valuemax={100}><div className="route-meter-fill" style={{ transform: `scaleX(${(progress ?? 8) / 100})` }}/></div>}
-        {run.errorMessage && <p role="alert" className="mt-4 rounded-lg bg-status-danger-surface px-3.5 py-3 text-sm leading-5 text-status-danger">{run.errorMessage}</p>}
-        {Object.keys(run.metrics ?? {}).length > 0 && <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-[#e5ebf4] pt-4 sm:grid-cols-3">{Object.entries(run.metrics).filter(([key, value]) => typeof value === "number" && !(key === "businessesReceived" && typeof run.metrics.businesses === "number") && !(key === "leadsReceived" && typeof run.metrics.leads === "number")).map(([key, value]) => <div key={key}><dt className="text-xs text-muted-foreground">{importMetricLabels[key] ?? key.replace(/([A-Z])/g, " $1")}</dt><dd className="mt-0.5 text-base font-bold tabular-nums">{fmtNumber(value)}</dd></div>)}</dl>}
+      {error && <p role="alert" className="dc-inline-alert">{error}</p>}
+      {loading ? <div role="status" className="dc-sync-loading"><LoaderCircle size={16} className="animate-spin"/>Consultando a última sincronização…</div> : !run ? <div className="dc-run-summary"><span className="dc-run-dot is-idle"/><div><p className="dc-run-title">Nenhuma sincronização registrada</p><p className="dc-run-copy">A primeira coleta pode ser iniciada pelo botão acima.</p></div></div> : <div className="dc-run-summary" aria-live="polite">
+        <span className={`dc-run-dot ${run.status === "completed" ? "is-success" : run.status === "failed" ? "is-danger" : "is-running"}`} aria-hidden="true"/>
+        <div className="min-w-0 flex-1">
+          <div className="dc-run-heading"><p className="dc-run-title">{run.status === "running" ? syncPhaseLabels[run.phase] ?? "Processando dados" : `Última coleta ${statusLabel.toLocaleLowerCase("pt-BR")}`}{monthLabel}</p><span className={`dc-status-pill ${run.status}`}>{run.status === "running" && <LoaderCircle size={13} className="animate-spin"/>}{run.status === "completed" && <CheckCircle2 size={13} />}{run.status === "failed" && <CircleAlert size={13} />}{statusLabel}</span></div>
+          <p className="dc-run-copy">Iniciada em {formatImportTime(run.startedAt)}{run.completedAt ? ` · finalizada em ${formatImportTime(run.completedAt)}` : ""}</p>
+          <div className="dc-run-progress-line"><span>{run.status === "running" ? `${fmtNumber(run.processed)}${run.total > 0 ? ` de ${fmtNumber(run.total)}` : ""} registros` : run.status === "completed" ? "Base validada e publicada" : "A lista publicada anterior foi preservada"}</span>{run.status === "running" && progress !== null && <span className="tabular-nums">{progress}%</span>}</div>
+          {run.status === "running" && <div className="route-meter dc-run-progress" role="progressbar" aria-label="Andamento da sincronização" aria-valuenow={progress ?? undefined} aria-valuemin={0} aria-valuemax={100}><div className="route-meter-fill" style={{ transform: `scaleX(${(progress ?? 8) / 100})` }}/></div>}
+          {run.errorMessage && <p role="alert" className="dc-inline-alert">{run.errorMessage}</p>}
+          {Object.keys(run.metrics ?? {}).length > 0 && <dl className="dc-run-metrics">{Object.entries(run.metrics).filter(([key, value]) => typeof value === "number" && !(key === "businessesReceived" && typeof run.metrics.businesses === "number") && !(key === "leadsReceived" && typeof run.metrics.leads === "number")).map(([key, value]) => <div key={key}><dt>{importMetricLabels[key] ?? key.replace(/([A-Z])/g, " $1")}</dt><dd>{fmtNumber(value)}</dd></div>)}</dl>}
+        </div>
       </div>}
     </section>
-    <section className="portal-panel p-5 sm:p-6"><h3 className="text-base font-bold text-heading">Base publicada</h3><p className="mt-1 text-sm text-muted-foreground">Lista disponível para cruzar com a Performance.</p><div className="mt-5 text-[30px] font-bold tabular-nums tracking-[-.03em] text-heading">{fmtNumber(overview.referralCount)}</div><p className="text-xs text-muted-foreground">entregadores atribuídos</p><div className="mt-5 space-y-1 border-t border-[#e5ebf4] pt-3"><button type="button" onClick={() => onTab("referrals")} className="flex min-h-11 w-full items-center justify-between text-left text-sm font-semibold text-brand-strong hover:underline">Ver entregadores <ArrowRight size={15}/></button><button type="button" onClick={() => onTab("reviews")} className="flex min-h-11 w-full items-center justify-between text-left text-sm font-semibold text-ink-mid hover:underline">Atribuições para revisar <span className="flex items-center gap-2 tabular-nums">{fmtNumber(overview.reviewCount ?? overview.reviews.length)} <ArrowRight size={15}/></span></button></div><p className="mt-4 text-xs leading-5 text-muted-foreground">A pipeline define o influenciador. O ID do Entregador liga a lista às corridas. A coleta completa é validada antes de publicar.</p><p className="mt-2 text-xs leading-5 text-muted-foreground">Coleta automática às 06:00, horário de Brasília.</p></section>
-  </div>
-    <DataCrazyHistory key={`${run?.id ?? "initial"}:${run?.status ?? "none"}:${refreshVersion}`} onTab={onTab}/>
+
+    <section className="dc-source-strip" aria-label="Resumo das fontes de dados">
+      <article className="dc-source-card">
+        <span className="dc-source-icon dc-source-icon-blue"><FileSpreadsheet size={18}/></span>
+        <div className="min-w-0 flex-1"><div className="dc-eyebrow">Base publicada</div><h3>Data Crazy</h3><div className="dc-source-value">{fmtNumber(overview.referralCount)}</div><p>entregadores atribuídos</p><div className="dc-source-updated">{run?.status === "running" ? "Sincronização em andamento" : dataCrazyUpdatedAt ? `Atualizada em ${formatImportTime(dataCrazyUpdatedAt)}` : "Aguardando a primeira coleta"}</div></div>
+      </article>
+      <article className="dc-source-card">
+        <span className="dc-source-icon dc-source-icon-cyan"><BarChart3 size={18}/></span>
+        <div className="min-w-0 flex-1"><div className="dc-eyebrow">Histórico importado</div><h3>Performance</h3><div className="dc-source-value">{fmtNumber(overview.contributionTotal)}</div><p>corridas acumuladas</p><div className="dc-source-updated">{latestPerformance ? `Importada em ${formatImportTime(latestPerformance.created_at)}` : "Aguardando a primeira importação"}</div></div>
+      </article>
+      <article className="dc-source-card dc-source-card-action">
+        <span className="dc-source-icon dc-source-icon-warning"><ClipboardList size={18}/></span>
+        <div className="min-w-0 flex-1"><div className="dc-eyebrow">Qualidade da atribuição</div><h3>Para revisar</h3><div className="dc-source-value">{fmtNumber(reviewCount)}</div><p>{reviewCount === 1 ? "UUID aguardando atribuição" : "UUIDs aguardando atribuição"}</p><button type="button" onClick={() => onTab("reviews")} className="dc-source-link">Abrir revisões <ArrowRight size={14}/></button></div>
+      </article>
+    </section>
+
+    <div className="dc-main-grid">
+      <DataCrazyHistory key={`${run?.id ?? "initial"}:${run?.status ?? "none"}:${refreshVersion}`} onTab={onTab}/>
+      <aside className="dc-crossmatch-panel portal-panel" aria-labelledby="dc-crossmatch-title">
+        <div className="dc-panel-heading"><span className="dc-panel-icon"><ArrowDownUp size={18}/></span><div><div className="dc-eyebrow">Como os dados se conectam</div><h2 id="dc-crossmatch-title">Cruzamento</h2></div></div>
+        <p className="dc-crossmatch-copy">O UUID do entregador na base Data Crazy identifica as corridas correspondentes no histórico de Performance.</p>
+        <div className="dc-match-key"><span>Chave de relacionamento</span><strong>UUID do entregador</strong></div>
+        <dl className="dc-crossmatch-stats">
+          <div><dt>Entregadores na base</dt><dd>{fmtNumber(overview.referralCount)}</dd></div>
+          <div><dt>Corridas importadas</dt><dd>{fmtNumber(overview.contributionTotal)}</dd></div>
+          <div><dt>UUIDs para revisar</dt><dd>{fmtNumber(reviewCount)}</dd></div>
+        </dl>
+        <div className="dc-crossmatch-note"><History size={16}/><p>A linha do tempo registra atividades capturadas pelo painel. Alterações campo a campo feitas no CRM ainda não aparecem aqui.</p></div>
+        <button type="button" onClick={() => onTab("referrals")} className="dc-panel-link">Consultar entregadores <ArrowRight size={15}/></button>
+      </aside>
+    </div>
   </div>;
 }
 
 function DataCrazyHistory({ onTab }: { onTab: (tab: TabId) => void }) {
-  const [items, setItems] = useState<ImportHistoryEntry[]>([]);
+  const [items, setItems] = useState<ImportActivityEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retryVersion, setRetryVersion] = useState(0);
+  const [sourceFilter, setSourceFilter] = useState<"all" | "data_crazy" | "performance">("all");
+  const [search, setSearch] = useState("");
   useEffect(() => {
     let current = true;
-    callAdminApi<ImportHistoryResult>("import-history", { limit: 5, offset: 0, status: "all", kind: "data_crazy" })
-      .then((result) => { if (current) setItems(result.items ?? []); })
-      .catch((cause) => { if (current) setError(cause instanceof Error ? cause.message : "Não foi possível carregar o histórico."); })
+    callAdminApi<ImportActivityEntry[]>("import-activity", { limit: 30, kind: sourceFilter })
+      .then((result) => { if (current) setItems(result ?? []); })
+      .catch((cause) => { if (current) setError(cause instanceof Error ? cause.message : "Não foi possível carregar a linha do tempo."); })
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
-  }, [retryVersion]);
-  return <section className="portal-panel p-5 sm:p-6"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-base font-bold text-heading">Histórico Data Crazy</h3><p className="mt-1 text-sm text-muted-foreground">Sincronizações da API e importações de arquivo, com responsável e resultado.</p></div><button type="button" onClick={() => onTab("imports")} className="inline-flex min-h-11 items-center gap-2 text-sm font-bold text-brand-strong hover:underline">Ver log completo <ArrowRight size={15}/></button></div>
-    {error && <div role="alert" className="mt-4 flex flex-wrap items-center gap-3 text-sm text-status-danger"><span>{error}</span><button type="button" onClick={() => { setLoading(true); setError(""); setRetryVersion((version) => version + 1); }} className="min-h-11 font-bold underline">Tentar novamente</button></div>}
-    {loading ? <p role="status" className="mt-5 text-sm text-muted-foreground">Carregando histórico…</p> : !error && items.length === 0 ? <p className="mt-5 text-sm text-muted-foreground">Ainda não há cargas Data Crazy registradas.</p> : items.length > 0 ? <ol className="mt-4 divide-y divide-[#e6ebf2] border-t border-border-subtle">{items.map((item) => <li key={item.id} className="flex flex-wrap items-start justify-between gap-3 py-3.5"><div className="min-w-0"><div className="text-sm font-semibold text-ink-strong">{item.source === "file" ? "Arquivo Data Crazy" : "Sincronização da API"} · {item.status === "completed" ? "concluída" : item.status === "staging" ? "em andamento" : item.status === "failed" ? "falhou" : "cancelada"}</div><div className="mt-1 text-xs text-muted-foreground">{formatImportTime(item.created_at)} · {importActorLabel(item)}</div></div><div className="text-right text-xs tabular-nums text-muted-foreground">{item.status === "completed" ? `${fmtNumber(item.staged_rows)} entregadores` : item.last_event_message || "Sem detalhes"}</div></li>)}</ol> : null}
+  }, [retryVersion, sourceFilter]);
+  const visibleItems = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase("pt-BR");
+    return items.filter((item) => {
+      if (!query) return true;
+      return `${item.message} ${item.file_name} ${item.actor_display_name ?? ""} ${item.actor_email ?? ""}`.toLocaleLowerCase("pt-BR").includes(query);
+    });
+  }, [items, search]);
+
+  return <section className="dc-timeline-panel portal-panel" aria-labelledby="dc-timeline-title">
+    <div className="dc-timeline-header">
+      <div><div className="dc-eyebrow">Auditoria do painel</div><h2 id="dc-timeline-title">Linha do tempo de atividades</h2><p>Sincronizações, etapas e importações com data, responsável e resultado.</p></div>
+      <button type="button" onClick={() => onTab("imports")} className="dc-panel-link">Abrir log completo <ArrowRight size={15}/></button>
+    </div>
+    <div className="dc-timeline-controls">
+      <label className="dc-search"><Search size={17} aria-hidden="true"/><span className="sr-only">Buscar responsável ou atividade</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar responsável ou atividade" /></label>
+      <div className="dc-filter-group" role="group" aria-label="Filtrar atividades por origem">
+        {[{ value: "all", label: "Todas" }, { value: "data_crazy", label: "Data Crazy" }, { value: "performance", label: "Performance" }].map((option) => <button key={option.value} type="button" aria-pressed={sourceFilter === option.value} onClick={() => { if (sourceFilter === option.value) return; setItems([]); setLoading(true); setError(""); setSourceFilter(option.value as typeof sourceFilter); }}>{option.label}</button>)}
+      </div>
+    </div>
+    {error && <div role="alert" className="dc-inline-alert dc-timeline-error"><span>{error}</span><button type="button" onClick={() => { setLoading(true); setError(""); setRetryVersion((version) => version + 1); }}>Tentar novamente</button></div>}
+    {loading ? <div role="status" className="dc-timeline-empty"><LoaderCircle size={17} className="animate-spin"/>Carregando atividades registradas…</div> : !error && visibleItems.length === 0 ? <div className="dc-timeline-empty"><History size={19}/><span>{items.length ? "Nenhuma atividade corresponde à busca." : "Ainda não há atividades registradas pelo painel."}</span></div> : visibleItems.length > 0 ? <ol className="dc-timeline-list">
+      {visibleItems.map((item, index) => {
+        const previous = visibleItems[index - 1];
+        const newDay = !previous || new Date(previous.created_at).toLocaleDateString("pt-BR") !== new Date(item.created_at).toLocaleDateString("pt-BR");
+        const date = new Date(item.created_at);
+        const eventTone = item.event_type === "completed" ? "is-success" : item.event_type === "failed" ? "is-danger" : item.event_type === "cancelled" ? "is-warning" : item.event_type === "started" ? "is-brand" : "is-muted";
+        const eventLabel = item.event_type === "completed" ? "Concluída" : item.event_type === "failed" ? "Falha" : item.event_type === "cancelled" ? "Cancelada" : item.event_type === "started" ? "Iniciada" : item.event_type === "progress" ? "Etapa" : "Registro";
+        const sourceLabel = item.kind === "data_crazy" ? (item.source === "api" ? "Data Crazy · API" : "Data Crazy · Painel") : "Performance · Painel";
+        return <Fragment key={item.id}>
+          {newDay && <li className="dc-date-divider"><span>{Number.isNaN(date.getTime()) ? "Data não informada" : date.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}</span></li>}
+          <li className="dc-event-row">
+            <span className={`dc-event-marker ${eventTone}`} aria-hidden="true"/>
+            <article className="dc-event-card">
+              <div className="dc-event-topline"><time dateTime={item.created_at}>{Number.isNaN(date.getTime()) ? "—" : date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</time><span className="dc-event-source">{sourceLabel}</span><span className={`dc-event-type ${eventTone}`}>{eventLabel}</span><span className="dc-event-actor"><UserRound size={13} aria-hidden="true"/>{importActorLabel(item)}</span></div>
+              <p className="dc-event-message">{repairTextEncoding(item.message)}</p>
+              {item.source === "file" && item.file_name && <p className="dc-event-file">Arquivo · {repairTextEncoding(item.file_name)}</p>}
+            </article>
+          </li>
+        </Fragment>;
+      })}
+    </ol> : null}
+    <div className="dc-timeline-footer">Mostrando {fmtNumber(visibleItems.length)} de até {fmtNumber(items.length)} atividades recentes</div>
   </section>;
 }
 

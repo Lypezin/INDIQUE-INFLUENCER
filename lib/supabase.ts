@@ -129,6 +129,12 @@ export async function callAdminApi<T>(
       p_kind: payload.kind,
     });
     data = result.data; error = result.error;
+  } else if (action === "import-activity") {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("list_recent_import_activity", {
+      p_limit: payload.limit,
+      p_kind: payload.kind,
+    });
+    data = result.data; error = result.error;
   } else if (action === "import-events") {
     const result = await supabase.schema(DATA_SCHEMA).rpc("list_import_events", {
       p_batch_id: payload.batchId,
