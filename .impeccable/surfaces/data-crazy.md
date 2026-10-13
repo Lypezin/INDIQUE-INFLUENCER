@@ -1,11 +1,11 @@
 # Data Crazy surface brief
 
-Approved visual direction: `.impeccable/mocks/dark-console-audit-first.png` (option 3, audit-first dark console).
+Approved visual direction: `Rotas em pauta` for the complete portal, chosen on 2026-10-13. Concept reference: `.impeccable/mocks/decision/rotas-em-pauta.png`. The concept image contains illustrative data and controls; real product functions and data remain authoritative.
 
 ## Product and brand
 
 - Keep the Indique e Ganhe name, blue paper-plane logo, and existing blue brand palette.
-- Use the dark console as the default portal appearance while honoring an explicitly saved light or dark preference.
+- Use the light operational layout by default while honoring an explicitly saved light or dark preference.
 - Keep the admin desktop and influencer mobile views readable with the same typography, spacing, border, and status-color rules.
 
 ## Data Crazy page

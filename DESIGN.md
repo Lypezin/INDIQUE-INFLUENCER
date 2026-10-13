@@ -1,54 +1,42 @@
 ---
 name: Indique e Ganhe
-description: Consulta de indicações, corridas e prêmios
+description: Painel de indicações, corridas e prêmios
 colors:
-  primary: "#185aa9"
-  primary-hover: "#114886"
-  primary-deep: "#123f78"
-  focus-surface: "#dbeafe"
-  selection-background: "#b9d7fa"
-  selection-foreground: "#102e57"
-  selection-background-dark: "#123f78"
-  selection-foreground-dark: "#ffffff"
-  ink: "#172a40"
-  heading: "#203b58"
-  ink-strong: "#29435e"
-  ink-mid: "#405b76"
-  muted-ink: "#60758b"
-  canvas: "#f6f8fc"
+  primary: "#2d70b8"
+  primary-hover: "#205b9e"
+  primary-deep: "#103b70"
+  sidebar-ink: "#eaf3ff"
+  amber: "#e7ac45"
+  canvas: "#f3f5f7"
   paper: "#ffffff"
-  border: "#dfe6f0"
-  border-subtle: "#e6ebf2"
-  brand-strong: "#205b9e"
-  brand-soft: "#eaf1fa"
-  surface-subtle: "#f7faff"
-  progress-track: "#e8eef7"
-  progress-fill: "#2f6fc2"
+  heading: "#17304b"
+  ink-strong: "#25445f"
+  ink-mid: "#48627c"
+  muted-ink: "#526b83"
+  border: "#d9e2eb"
+  border-subtle: "#e3e9ef"
+  brand-soft: "#e8f1fa"
+  surface-subtle: "#f6f8fa"
+  progress-track: "#dce8f3"
+  progress-fill: "#2d70b8"
   status-success: "#267353"
   status-success-surface: "#eaf2fc"
-  status-warning: "#795c2f"
-  status-warning-surface: "#fff9ed"
+  status-warning: "#76531d"
+  status-warning-surface: "#fff5e3"
   status-danger: "#a94b37"
   status-danger-surface: "#fff3ef"
-  canvas-dark: "#0c1420"
-  paper-dark: "#141e2b"
-  surface-dark: "#1a2737"
-  border-dark: "#2b3a4d"
-  ink-dark: "#dce6f2"
-  muted-ink-dark: "#a9bbce"
-  text-muted-dark: "#c3d1e0"
-  primary-dark: "#185aa9"
+  canvas-dark: "#0e1825"
+  paper-dark: "#182636"
+  surface-dark: "#203246"
+  border-dark: "#34495e"
+  ink-dark: "#edf4fb"
+  muted-ink-dark: "#adbed0"
+  primary-dark: "#397dc4"
   accent-dark: "#91bcf2"
-  success-dark: "#8edbb5"
-  danger-dark: "#f2a89b"
-  input-dark: "#34455a"
-  input-focus-dark: "#1c3e65"
-  accent-surface-dark: "#1a2c40"
-  danger-surface-dark: "#38231f"
 typography:
   headline:
     fontFamily: "Aptos, Segoe UI, Arial, sans-serif"
-    fontSize: "clamp(1.75rem, 6vw, 2.15rem)"
+    fontSize: "clamp(1.75rem, 6vw, 2.125rem)"
     fontWeight: 730
     lineHeight: 1.14
     letterSpacing: "-0.03em"
@@ -57,22 +45,15 @@ typography:
     fontSize: "1rem"
     fontWeight: 450
     lineHeight: 1.5
-  scale:
-    caption: "12px"
-    supporting: "14px"
-    body: "16px"
-    courier-name: "17px"
-    section-title: "16px to 18px"
-    page-title: "clamp(28px, 6vw, 34px)"
-    login-title: "clamp(1.75rem, 6vw, 2rem)"
-    login-display: "clamp(2.75rem, 4vw, 4.5rem)"
-    metric-value: "25px"
-    highlight-metric: "30px"
+  label:
+    fontFamily: "Aptos, Segoe UI, Arial, sans-serif"
+    fontSize: "0.875rem"
+    fontWeight: 650
+    lineHeight: 1.4
 rounded:
   control: "8px"
-  surface: "12px"
+  surface: "11px"
   meter: "999px"
-  scrollbar-thumb: "6px"
 spacing:
   compact: "8px"
   regular: "16px"
@@ -83,72 +64,73 @@ components:
     textColor: "{colors.paper}"
     rounded: "{rounded.control}"
     height: "52px"
-  summary-grid:
-    purpose: "Agrupa indicadores relacionados em uma superfície com divisórias."
-  courier-name:
-    purpose: "Destaca o entregador com 17px, peso forte e contraste de título."
-  route-meter:
-    purpose: "Exibe progresso visual e semântica acessível de valor."
-  sync-confirmation:
-    purpose: "Explica substituição da base antes de iniciar coleta completa."
-  review-assignment:
-    purpose: "Exige botão explícito para salvar atribuição selecionada."
-  referral-status-tabs:
-    purpose: "Organiza indicados entre em progresso, a pagar e pagos, com contagens que acompanham a busca e os filtros."
-  referral-management-actions:
-    purpose: "Permite transferir o responsável, registrar pagamento com confirmação e consultar o histórico administrativo."
-  performance-preview:
-    purpose: "Mostra até cinco linhas interpretadas antes de somar corridas ao histórico."
-  workspace-load-error:
-    purpose: "Separa falha de carregamento de uma conta ainda sem vínculo e oferece nova tentativa."
   admin-sidebar:
-    purpose: "Recolhe a navegação no desktop sem remover os nomes acessíveis dos destinos."
+    backgroundColor: "{colors.primary-deep}"
+    textColor: "{colors.sidebar-ink}"
+  portal-panel:
+    backgroundColor: "{colors.paper}"
+    rounded: "{rounded.surface}"
+  route-meter:
+    backgroundColor: "{colors.progress-track}"
+    rounded: "{rounded.meter}"
 ---
 
 # Design System: Indique e Ganhe
 
 ## Overview
 
-Um painel de trabalho para consultar o avanço de entregadores indicados. O azul identifica ações e progresso; a informação vem antes da decoração.
+**Direção criativa: “Rotas em pauta”.** O portal se comporta como um quadro operacional: cada faixa permite reconhecer responsável, situação, corridas e próximo passo sem percorrer cartões repetidos. A composição é precisa e calma, com densidade suficiente para consultar muitos entregadores.
+
+O azul mantém a identidade EntreGO; o âmbar pontua o que pede atenção. Os dados reais, as permissões, os fluxos de sincronização e os estados de pagamento determinam o conteúdo. O desenho não promete acompanhamento em tempo real.
+
+**Características:** faixas horizontais de progresso, agrupamentos claros, números alinhados, navegação lateral estável e detalhes secundários sob demanda.
 
 ## Colors
 
-O azul escuro organiza a área de entrada, o azul médio marca ações e barras de progresso, e o fundo quase branco mantém listas longas legíveis. Âmbar fica reservado a avisos e revisão.
+O azul profundo ancora a navegação e títulos; o azul de ação marca controles e progresso; o canvas frio separa os painéis. O âmbar é reservado a marcos, revisões e pagamentos pendentes. Sucesso e erro têm cores próprias e nunca dependem apenas da cor para comunicar estado.
+
+**Regra da atenção.** O âmbar sinaliza uma ação ou um marco real; não é preenchimento decorativo. Uma tela pode ter vários valores, mas apenas uma ação principal visualmente dominante.
+
+No tema escuro, canvas, superfícies e bordas usam a mesma hierarquia com tokens escuros. Texto, foco e estados conservam contraste legível.
 
 ## Typography
 
-Títulos curtos e diretos. Números de corridas, metas e valores usam algarismos tabulares. Rótulos e instruções mantêm tamanho legível em telas pequenas.
+Aptos, Segoe UI e Arial formam a pilha do produto. Títulos são curtos e escaneáveis; nomes dos entregadores têm peso forte; números de corridas, metas e valores usam algarismos tabulares. Rótulos de ação usam linguagem direta em português.
+
+**Regra do número útil.** Cada número vem com seu significado: “24 de 30 corridas”, “faltam 6” ou “R$ 50 liberados”.
 
 ## Layout
 
-No celular, o progresso dos entregadores aparece antes dos totais. Campos e ações têm alvo de toque de pelo menos 44 px. A lista revela dados pessoais somente ao expandir uma linha. No desktop, a administração usa navegação lateral de 250 px, recolhível para 76 px, e painéis mais largos. Em larguras menores, a navegação lateral cede espaço à barra superior e ao menu móvel.
+No desktop, a administração tem barra lateral fixa e recolhível, dividida em Acompanhar, Fontes de dados e Administrar. A visão geral começa pelo quadro de operações e depois apresenta contexto e totais. A guia de indicados começa pelas situações Em progresso, A pagar e Pagos, seguida de métricas, busca e filtros por influenciador. Listas longas usam faixas compactas com separadores, não cartões altos repetidos.
+
+No painel do influenciador, o progresso dos indicados aparece antes dos totais no celular. Cada faixa reúne nome, localidade, corridas acumuladas, meta, restante e prêmio. Contato, CPF e identificadores ficam em detalhes expansíveis conforme a permissão da conta. Em telas estreitas, a navegação vira menu móvel e as faixas se reorganizam sem rolagem horizontal obrigatória. Controles de decisão mantêm alvo de toque de ao menos 44 px.
+
+**Regra da primeira dobra.** A pessoa identifica seu trabalho imediato e entra na lista principal sem atravessar uma parede de métricas.
 
 ## Elevation & Depth
 
-Divisórias finas separam linhas e seções. Sombras leves aparecem sobretudo na tela de entrada; listas de dados permanecem planas.
+A hierarquia vem principalmente de cor de fundo, bordas finas e espaçamento. A tela de entrada pode usar sombra suave para separar o formulário; listas operacionais permanecem planas. Evitar cartões dentro de cartões e sombras em cada linha de indicado.
 
 ## Shapes
 
-Controles usam 8 px; seções e superfícies usam aproximadamente 12 px. Barras de progresso são arredondadas apenas para comunicar preenchimento.
+Controles são discretamente arredondados, superfícies têm cantos moderados e medidores são arredondados para mostrar preenchimento. Pílulas de estado podem ser compactas, mas o texto do estado permanece visível. A geometria das faixas cria ritmo horizontal estável.
 
 ## Components
 
-Botões primários são azuis com texto branco; foco visível usa contorno azul. Campos são brancos com borda azul acinzentada e foco mais forte. Cartões de entregador colocam nome, região e corridas antes do estado do prêmio.
+- **Faixa de indicado:** nome e região à esquerda; progresso, quantidade e situação juntos; ações e detalhes somente quando relevantes. A versão administrativa expõe transferência e registro/reabertura de pagamento quando permitidos.
+- **Medidor de rotas:** preenchimento azul com valores explícitos e semântica de progresso acessível. Não usar cor como única indicação de conclusão.
+- **Guias de situação:** Em progresso, A pagar e Pagos exibem contagens e estado selecionado perceptível ao teclado e ao toque.
+- **Resumo operacional:** revisões e fontes de dados têm caminho direto para a ação. Totais ficam agrupados e não competem com essas tarefas.
+- **Fontes e histórico:** Data Crazy e Performance apresentam origem, período dos dados quando disponível, última operação, andamento e erro de forma legível. Sincronização completa mantém confirmação; a prévia de Performance mostra dados interpretados antes da soma.
+- **Barra lateral:** permanece fixa no desktop, recolhe sem perder nomes acessíveis e preserva a seção ativa. Perfil abre pelo avatar; o menu móvel oferece os mesmos destinos.
+- **Estados vazios e falhas:** explicar se faltam dados, filtros não encontram registros ou houve erro de carregamento; oferecer a ação correspondente quando existir.
+
+Movimento é breve e funcional. O medidor pode transicionar em 280 ms e a navegação entrar discretamente; `prefers-reduced-motion` remove deslocamentos e animações não essenciais.
 
 ## Do's and Don'ts
 
-- **Do** apresentar corridas, meta, corridas restantes e valor do prêmio perto de cada entregador.
-- **Do** avisar que os dados mudam por importação, sem prometer tempo real.
-- **Don't** usar ícones decorativos, frases promocionais vagas ou cartões aninhados para preencher espaço.
-
-## Padrões compartilhados (2026-10-10)
-
-- **Superfícies:** painéis usam fundo de cartão, borda semântica e raio de 12 px. Indicadores relacionados formam um único grupo com divisórias, em vez de cartões soltos.
-- **Texto:** rótulos e metadados usam 12 px; texto auxiliar, 14 px; conteúdo padrão, 16 px; títulos de seção, 16–18 px. O nome do entregador recebe 17 px, peso forte e contraste de título para facilitar a localização em listas densas.
-- **Tokens semânticos:** `heading`, `ink-strong`, `ink-mid`, `brand-strong`, `brand-soft`, `surface-subtle`, `border-subtle`, `progress-track`, `progress-fill` e estados `status-success`, `status-warning` e `status-danger` mantêm a mesma intenção nos temas claro e escuro.
-- **Movimento:** transições de interação permanecem curtas; a barra de progresso usa 280 ms e menus/detalhes usam entrada discreta. `prefers-reduced-motion` remove o movimento de progresso e reduz as transições.
-- **Acessibilidade:** progresso expõe papel e valor a tecnologias assistivas; avisos de erro e sucesso são anunciados; botões de decisão mantêm área de toque mínima de 44 px.
-- **Métricas:** números recorrentes usam 25 px; a métrica principal de uma área pode usar 30 px. Títulos de login e de página seguem escalas separadas para evitar que um tamanho de destaque vire padrão em todo o painel.
-- **Movimento de navegação:** recolher a barra lateral usa uma transição de grade de 240 ms apenas no desktop. A troca de painel usa uma breve alteração de opacidade; o menu móvel usa opacidade e movimento vertical discreto, reduzido para uma transição curta de opacidade em telas estreitas. `prefers-reduced-motion` remove o movimento espacial e a animação do painel; o conteúdo continua aparecendo imediatamente.
-- **Prévia de Performance:** antes de confirmar a soma, a conferência mostra até cinco entregadores, UUIDs, praças e quantidades interpretados do arquivo. Os dados sensíveis de contato continuam fora dessa tabela.
-- **Erros de carregamento:** uma falha de rede/consulta mostra tentar novamente e sair; o formulário de código só aparece quando o acesso não está vinculado e não houve falha de carregamento.
+- **Do** manter corridas, meta, restante e prêmio próximos do nome do entregador.
+- **Do** diferenciar sincronização da Data Crazy e importação acumulativa de Performance com textos e estados reais.
+- **Do** manter foco visível, estados anunciáveis e contraste adequado nos temas claro e escuro.
+- **Don't** inventar dados, eventos, taxas de cobertura ou sensação de atualização ao vivo.
+- **Don't** usar cartões repetidos, ícones decorativos ou âmbar sem uma ação ou marco correspondente.
