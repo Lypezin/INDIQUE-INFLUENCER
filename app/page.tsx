@@ -23,7 +23,9 @@ type Profile = { user_id: string; role: Role; influencer_id: string | null; emai
 type Influencer = { id: string; name: string; route_goal: number; prize_cents: number; is_demo?: boolean };
 type Referral = {
   referral_id: string;
-  uuid: string;
+  uuid: string | null;
+  lead_id: string | null;
+  is_unidentified: boolean;
   name: string;
   region: string | null;
   released_at: string | null;
@@ -53,7 +55,7 @@ type DataCrazySyncRun = {
   processed: number; total: number; metrics: Record<string, number>;
   windowMonth?: string | null; errorMessage: string | null; startedAt: string; completedAt: string | null;
 };
-type Review = { id: string; uuid: string; name: string; region: string | null; raw_influencer: string; status: string };
+type Review = { id: string; uuid: string | null; lead_id?: string | null; is_unidentified?: boolean; name: string; region: string | null; raw_influencer: string; status: string };
 type Member = { user_id: string; email: string; role: Role; display_name: string | null; influencer_id: string | null; influencer_name: string | null };
 type PendingInvite = { id: string; email: string; role: Role; influencer_name: string | null; created_at: string };
 type AdminOverview = { influencers: Influencer[]; availableInfluencers: Influencer[]; imports: ImportSummary[]; reviews: Review[]; reviewCount: number; members: Member[]; invites: PendingInvite[]; referralCount: number; contributionTotal: number };
@@ -66,8 +68,9 @@ type AdminReferralEvent = {
   new_influencer_name: string | null; amount_cents: number | null; occurred_at: string;
 };
 type AdminReferral = {
-  uuid: string; name: string; region: string | null; released_at: string | null; phone: string | null; cpf: string | null;
-  influencer_id: string; influencer_name: string; pipeline_influencer_id: string; pipeline_influencer_name: string;
+  referral_id: string; uuid: string | null; lead_id: string | null; is_unidentified: boolean;
+  name: string; region: string | null; released_at: string | null; phone: string | null; cpf: string | null;
+  influencer_id: string; influencer_name: string; pipeline_influencer_id: string | null; pipeline_influencer_name: string | null;
   assignment_overridden: boolean; routes: number; route_goal: number; prize_cents: number; prize_unlocked: boolean;
   routes_remaining: number; reward_status: AdminReferralStatus; paid_at: string | null; paid_amount_cents: number | null;
   paid_influencer_id: string | null; paid_influencer_name: string | null; recent_events: AdminReferralEvent[];
@@ -207,8 +210,8 @@ export default function Home() {
     const all: Referral[] = [];
     for (let offset = 0; ; offset += 500) {
       const { data, error } = await supabase.schema(DATA_SCHEMA).from("referral_progress")
-        .select("referral_id,uuid,name,region,released_at,phone,cpf,routes,route_goal,prize_cents,prize_unlocked,routes_remaining,influencer_name")
-        .order("prize_unlocked", { ascending: false }).order("routes", { ascending: false }).order("uuid")
+        .select("referral_id,uuid,lead_id,is_unidentified,name,region,released_at,phone,cpf,routes,route_goal,prize_cents,prize_unlocked,routes_remaining,influencer_name")
+        .order("prize_unlocked", { ascending: false }).order("routes", { ascending: false }).order("uuid").order("lead_id")
         .range(offset, offset + 499);
       if (error) throw error;
       all.push(...((data ?? []) as Referral[]).map((item) => ({
@@ -221,6 +224,24 @@ export default function Home() {
     return all;
   }, [supabase]);
 
+  const fetchAdminOverview = useCallback(async () => {
+    const data = await callAdminApi<AdminOverview>("admin-overview", {});
+    if (!supabase) return data;
+    const [assigned, reviews] = await Promise.all([
+      supabase.schema(DATA_SCHEMA).from("data_crazy_unidentified_referrals")
+        .select("lead_id", { count: "exact", head: true }).not("influencer_id", "is", null).eq("needs_review", false),
+      supabase.schema(DATA_SCHEMA).from("data_crazy_unidentified_referrals")
+        .select("lead_id", { count: "exact", head: true }).eq("needs_review", true),
+    ]);
+    if (assigned.error) throw assigned.error;
+    if (reviews.error) throw reviews.error;
+    return {
+      ...data,
+      referralCount: data.referralCount + (assigned.count ?? 0),
+      reviewCount: data.reviewCount + (reviews.count ?? 0),
+    };
+  }, [supabase]);
+
   const loadWorkspace = useCallback(async () => {
     setLoading(true);
     setLoadError("");
@@ -228,7 +249,7 @@ export default function Home() {
       const nextProfile = await callAdminApi<Profile>("profile", {});
       setProfile(nextProfile);
       if (nextProfile.role === "admin") {
-        const data = await callAdminApi<AdminOverview>("admin-overview", {});
+        const data = await fetchAdminOverview();
         setOverview(data);
         setWorkspaceDataRevision(0);
         setInfluencer(null);
@@ -254,18 +275,18 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [supabase, fetchInfluencerReferrals]);
+  }, [supabase, fetchInfluencerReferrals, fetchAdminOverview]);
 
   const refreshAdmin = useCallback(async () => {
-    setOverview(await callAdminApi<AdminOverview>("admin-overview", {}));
-  }, []);
+    setOverview(await fetchAdminOverview());
+  }, [fetchAdminOverview]);
 
   const checkForImportedData = useCallback(async () => {
     if (!supabase || !session || !profile || document.visibilityState !== "visible") return;
     try {
       if (profile.role === "admin") {
         if (!overview) return;
-        const latest = await callAdminApi<AdminOverview>("admin-overview", {});
+        const latest = await fetchAdminOverview();
         if (completedImportCursor(latest) !== completedImportCursor(overview)) {
           setOverview(latest);
           setWorkspaceDataRevision((revision) => revision + 1);
@@ -281,7 +302,7 @@ export default function Home() {
     } catch {
       // Keep the current view usable and retry on the next interval or focus.
     }
-  }, [supabase, session, profile, overview, lastImportAt, fetchInfluencerReferrals]);
+  }, [supabase, session, profile, overview, lastImportAt, fetchInfluencerReferrals, fetchAdminOverview]);
 
   useEffect(() => {
     if (!session || !profile) return;
@@ -516,12 +537,12 @@ function InfluencerDashboard({ referrals, influencer, lastImportAt, search, setS
   const totalRoutes = referrals.reduce((total, referral) => total + Number(referral.routes || 0), 0);
   const unlocked = referrals.filter((referral) => referral.prize_unlocked).length;
   const prizeTotal = referrals.filter((referral) => referral.prize_unlocked).reduce((sum, referral) => sum + referral.prize_cents, 0);
-  const visible = referrals.filter((referral) => (!onlyUnlocked || referral.prize_unlocked) && `${referral.name} ${referral.region ?? ""} ${referral.uuid}`.toLocaleLowerCase("pt-BR").includes(search.toLocaleLowerCase("pt-BR")));
+  const visible = referrals.filter((referral) => (!onlyUnlocked || referral.prize_unlocked) && `${referral.name} ${referral.region ?? ""} ${referral.uuid ?? ""} ${referral.lead_id ?? ""}`.toLocaleLowerCase("pt-BR").includes(search.toLocaleLowerCase("pt-BR")));
   return <>
     {influencer?.is_demo && <div className="mb-5 rounded-xl border border-[#e8d7a7] bg-[#fff9e9] px-4 py-3 text-sm font-medium text-[#785b1d]">Demonstração: os entregadores e as corridas desta tela são fictícios.</div>}
     <div className="dashboard-heading"><div><h1>Seus indicados</h1><p>Meta de {fmtNumber(influencer?.route_goal ?? 0)} corridas por entregador · {fmtMoney(influencer?.prize_cents ?? 0)} por prêmio</p></div><span>{influencer?.is_demo ? "Dados de demonstração" : lastImportAt ? `Dados atualizados em: ${new Date(lastImportAt).toLocaleString("pt-BR")}` : "Aguardando a primeira atualização de dados"}</span></div>
     <section className="referral-section">
-      <div className="referral-heading"><div><h2>Progresso dos entregadores</h2><p>Corridas acumuladas até a próxima meta</p></div><div className="referral-controls"><label className="relative"><Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8a9aaf]"/><input aria-label="Buscar entregador" value={search} onChange={(event) => setSearch(event.target.value)} className="h-11 w-full rounded-lg border border-border bg-white pl-10 pr-3 text-sm outline-none focus:border-[#2c67b2] sm:w-56" placeholder="Nome ou região"/></label><button onClick={() => setOnlyUnlocked(!onlyUnlocked)} aria-pressed={onlyUnlocked} className="filter-action">{onlyUnlocked ? "Limpar filtro" : "Prêmios conquistados"}</button></div></div>
+      <div className="referral-heading"><div><h2>Progresso dos entregadores</h2><p>Corridas acumuladas até a próxima meta</p></div><div className="referral-controls"><label className="relative"><Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8a9aaf]"/><input aria-label="Buscar entregador" value={search} onChange={(event) => setSearch(event.target.value)} className="h-11 w-full rounded-lg border border-border bg-white pl-10 pr-3 text-sm outline-none focus:border-[#2c67b2] sm:w-56" placeholder="Nome, região ou ID do lead"/></label><button onClick={() => setOnlyUnlocked(!onlyUnlocked)} aria-pressed={onlyUnlocked} className="filter-action">{onlyUnlocked ? "Limpar filtro" : "Prêmios conquistados"}</button></div></div>
       {visible.length === 0 ? <EmptyState title={referrals.length ? "Nenhum resultado encontrado" : "Ainda não há indicados"} detail={referrals.length ? "Tente outro nome ou limpe o filtro." : "Os entregadores aparecerão depois da próxima sincronização do Data Crazy."} /> : <div className="divide-y divide-[#e6ebf2]">{visible.slice(0, visibleCount).map((referral) => <ReferralRow key={referral.referral_id} referral={referral}/>)}</div>}
       {visible.length > visibleCount && <button className="load-more" onClick={() => setVisibleCount(visibleCount + 30)}>Mostrar mais {fmtNumber(Math.min(30, visible.length - visibleCount))} entregadores</button>}
       {visible.length > 0 && <div className="referral-footer">Mostrando {fmtNumber(Math.min(visibleCount, visible.length))} de {fmtNumber(visible.length)} {visible.length === 1 ? "entregador" : "entregadores"}</div>}
@@ -546,9 +567,9 @@ function ReferralRow({ referral }: { referral: Referral }) {
   const detailsId = `referral-details-${referral.referral_id}`;
   return <div className="px-4 py-4 sm:px-6"><button onClick={() => setExpanded(!expanded)} aria-expanded={expanded} aria-controls={detailsId} className="grid min-h-14 w-full gap-4 text-left md:grid-cols-[minmax(180px,1.05fr)_minmax(190px,1.4fr)_145px_24px] md:items-center">
     <div className="flex min-w-0 items-center gap-3"><div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-xs font-bold text-[#2b5d9c]">{(referral.name || "EN").split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</div><div className="min-w-0 flex-1"><div className="courier-name">{referral.name || "Nome indisponível"}</div><div className="mt-1 flex items-center gap-1 text-xs text-[#657b90]"><MapPin size={13}/>{referral.region || "Região não informada"}</div><div className="mt-1 flex items-center gap-1 text-xs text-[#74889b]"><CalendarDays size={13}/>Liberação: {fmtDate(referral.released_at)}</div></div><ChevronDown size={18} className={`shrink-0 text-[#5e7894] transition md:hidden ${expanded ? "rotate-180" : ""}`} /></div>
-    <div><div className="mb-2 flex items-center justify-between text-xs"><span className="font-semibold text-[#294866]">{fmtNumber(referral.routes)} <span className="font-normal text-[#64798d]">de {fmtNumber(referral.route_goal)} corridas</span></span><span className="font-semibold text-[#245ca6]">{progress}%</span></div><div className="route-meter" role="progressbar" aria-label={`Progresso de ${referral.name || "entregador"}`} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-valuetext={`${fmtNumber(referral.routes)} de ${fmtNumber(referral.route_goal)} corridas`}><div className="route-meter-fill" style={{ transform: `scaleX(${progress / 100})` }}/></div></div>
+    <div><div className="mb-2 flex items-center justify-between text-xs"><span className="font-semibold text-[#294866]">{fmtNumber(referral.routes)} <span className="font-normal text-[#64798d]">de {fmtNumber(referral.route_goal)} corridas</span></span><span className="font-semibold text-[#245ca6]">{progress}%</span></div><div className="route-meter" role="progressbar" aria-label={`Progresso de ${referral.name || "entregador"}`} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-valuetext={`${fmtNumber(referral.routes)} de ${fmtNumber(referral.route_goal)} corridas`}><div className="route-meter-fill" style={{ transform: `scaleX(${progress / 100})` }}/></div>{referral.is_unidentified && <p className="mt-2 text-xs leading-5 text-status-warning">Sem UUID do entregador; corridas serão cruzadas quando esse ID estiver disponível.</p>}</div>
     <div className="flex items-center justify-between gap-2 md:block md:text-right">{referral.prize_unlocked ? <span className="inline-flex items-center gap-1.5 rounded-full bg-status-success-surface px-2.5 py-1.5 text-xs font-bold text-brand-strong"><CheckCircle2 size={12}/>Prêmio liberado</span> : <><span className="block text-sm font-semibold text-[#415b60]">Faltam {fmtNumber(referral.routes_remaining)}</span><span className="mt-0.5 block text-xs text-[#697f94]">para {fmtMoney(referral.prize_cents)}</span></>}</div><ChevronDown size={16} className={`hidden text-[#9aaaa8] transition md:block ${expanded ? "rotate-180" : ""}`} />
-  </button><div id={detailsId} className={`courier-details-reveal ${expanded ? "is-open" : ""}`} aria-hidden={!expanded}><div><div className="mt-4 grid gap-3 rounded-xl bg-surface-subtle p-3.5 text-sm sm:grid-cols-3"><Detail label="Telefone" value={referral.phone || "Indisponível"}/><Detail label="CPF" value={referral.cpf ? `${referral.cpf.slice(0, 3)}.${referral.cpf.slice(3, 6)}.${referral.cpf.slice(6, 9)}-${referral.cpf.slice(9)}` : "Não informado"}/><Detail label="UUID" value={referral.uuid}/></div></div></div></div>;
+  </button><div id={detailsId} className={`courier-details-reveal ${expanded ? "is-open" : ""}`} aria-hidden={!expanded}><div><div className="mt-4 grid gap-3 rounded-xl bg-surface-subtle p-3.5 text-sm sm:grid-cols-3"><Detail label="Telefone" value={referral.phone || "Indisponível"}/><Detail label="CPF" value={referral.cpf ? `${referral.cpf.slice(0, 3)}.${referral.cpf.slice(3, 6)}.${referral.cpf.slice(6, 9)}-${referral.cpf.slice(9)}` : "Não informado"}/><Detail label={referral.is_unidentified ? "ID do lead Data Crazy" : "UUID"} value={referral.is_unidentified ? referral.lead_id || "Indisponível" : referral.uuid || "Não informado"}/></div></div></div></div>;
 }
 
 function Detail({ label, value }: { label: string; value: string }) { return <div><div className="text-xs font-bold uppercase tracking-[.08em] text-[#98a5a4]">{label}</div><div className="mt-1 break-all font-medium text-[#52686a]">{value}</div></div>; }
@@ -579,13 +600,13 @@ function AdminHome({ overview, onTab }: { overview: AdminOverview; onTab: (tab: 
   const latestDataCrazy = overview.imports.filter((item) => item.kind === "data_crazy").sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
   const latestPerformance = overview.imports.filter((item) => item.kind === "performance").sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
   const importState = (status: string) => ({ completed: "concluída", staging: "em andamento", failed: "falhou", cancelled: "cancelada" })[status as "completed" | "staging" | "failed" | "cancelled"] ?? status;
-  return <><div className="summary-grid admin-summary-grid"><StatCard label="Entregadores ativos" value={fmtNumber(overview.referralCount)} icon={<Users size={17}/>} sub="na lista atual do Data Crazy" color="teal"/><StatCard label="Corridas acumuladas" value={fmtNumber(overview.contributionTotal)} icon={<BarChart3 size={17}/>} sub="soma do histórico importado" color="blue"/><StatCard label="Atribuições em revisão" value={fmtNumber(overview.reviewCount ?? overview.reviews.length)} icon={<ClipboardList size={17}/>} sub="UUIDs aguardando responsável" color="gold"/><StatCard label="Contas vinculadas" value={fmtNumber(overview.members.length)} icon={<ShieldCheck size={17}/>} sub="administração e influenciadores" color="plum"/></div>
+  return <><div className="summary-grid admin-summary-grid"><StatCard label="Entregadores ativos" value={fmtNumber(overview.referralCount)} icon={<Users size={17}/>} sub="na lista atual do Data Crazy" color="teal"/><StatCard label="Corridas acumuladas" value={fmtNumber(overview.contributionTotal)} icon={<BarChart3 size={17}/>} sub="soma do histórico importado" color="blue"/><StatCard label="Atribuições em revisão" value={fmtNumber(overview.reviewCount ?? overview.reviews.length)} icon={<ClipboardList size={17}/>} sub="leads aguardando responsável" color="gold"/><StatCard label="Contas vinculadas" value={fmtNumber(overview.members.length)} icon={<ShieldCheck size={17}/>} sub="administração e influenciadores" color="plum"/></div>
     <div className="mt-6 grid items-start gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(300px,.75fr)]">
       <section className="portal-panel p-5 sm:p-6"><h2 className="text-base font-bold text-heading">Fluxo de dados</h2><p className="mt-1 text-sm text-muted-foreground">Da lista de entregadores às corridas e atribuições.</p>
         <div className="mt-5 divide-y divide-[#e6ebf2] border-y border-border-subtle">
           <WorkflowAction icon={<CloudUpload size={18}/>} title="Data Crazy" detail={latestDataCrazy ? `Carga recente: ${formatImportTime(latestDataCrazy.created_at)} · ${importState(latestDataCrazy.status)}` : "Nenhuma carga entre as mais recentes"} meta={`${fmtNumber(overview.referralCount)} entregadores`} onClick={() => onTab("data-crazy")}/>
           <WorkflowAction icon={<ArrowDownUp size={18}/>} title="Performance" detail={latestPerformance ? `Carga recente: ${formatImportTime(latestPerformance.created_at)} · ${importState(latestPerformance.status)}` : "Nenhuma carga entre as mais recentes"} meta={`${fmtNumber(overview.contributionTotal)} corridas`} onClick={() => onTab("performance")}/>
-          <WorkflowAction icon={<ClipboardList size={18}/>} title="Revisões" detail="Confira os UUIDs que precisam de atribuição." meta={`${fmtNumber(overview.reviewCount ?? overview.reviews.length)} pendentes`} onClick={() => onTab("reviews")}/>
+          <WorkflowAction icon={<ClipboardList size={18}/>} title="Revisões" detail="Confira os indicados que precisam de atribuição." meta={`${fmtNumber(overview.reviewCount ?? overview.reviews.length)} pendentes`} onClick={() => onTab("reviews")}/>
         </div>
         <button type="button" onClick={() => onTab("referrals")} className="mt-4 inline-flex min-h-11 items-center gap-2 text-sm font-bold text-brand-strong hover:underline">Ver todos os indicados <ArrowRight size={15}/></button>
       </section>
@@ -716,7 +737,7 @@ function DataCrazySyncPanel({ overview, refresh, refreshVersion, onTab }: { over
       </article>
       <article className="dc-source-card dc-source-card-action">
         <span className="dc-source-icon dc-source-icon-warning" aria-hidden="true"><ClipboardList size={18}/></span>
-        <div className="dc-source-copy"><h2>Para revisar</h2><p>{reviewCount === 1 ? "UUID aguardando atribuição" : "UUIDs aguardando atribuição"}</p><button type="button" onClick={() => onTab("reviews")} className="dc-source-link">Abrir revisões <ArrowRight size={14}/></button></div>
+        <div className="dc-source-copy"><h2>Para revisar</h2><p>{reviewCount === 1 ? "indicado aguardando atribuição" : "indicados aguardando atribuição"}</p><button type="button" onClick={() => onTab("reviews")} className="dc-source-link">Abrir revisões <ArrowRight size={14}/></button></div>
         <div className="dc-source-metric"><strong>{fmtNumber(reviewCount)}</strong><span>{reviewCount === 1 ? "pendência" : "pendências"}</span></div>
       </article>
     </section>
@@ -731,7 +752,7 @@ function DataCrazySyncPanel({ overview, refresh, refreshVersion, onTab }: { over
         <dl className="dc-crossmatch-stats">
           <div><dt>Entregadores na base</dt><dd>{fmtNumber(overview.referralCount)}</dd></div>
           <div><dt>Corridas importadas</dt><dd>{fmtNumber(overview.contributionTotal)}</dd></div>
-          <div><dt>UUIDs para revisar</dt><dd>{fmtNumber(reviewCount)}</dd></div>
+          <div><dt>Indicações para revisar</dt><dd>{fmtNumber(reviewCount)}</dd></div>
         </dl>
         <div className="dc-crossmatch-note"><History size={16}/><p>A atribuição dos indicados é definida exclusivamente pela pipeline do negócio.</p></div>
         <button type="button" onClick={() => onTab("referrals")} className="dc-panel-link">Consultar entregadores <ArrowRight size={15}/></button>
@@ -940,7 +961,9 @@ const historyStatusLabels: Record<ImportHistoryEntry["status"], string> = {
 };
 const importMetricLabels: Record<string, string> = {
   total: "Linhas válidas", ambiguous: "Para revisar", ignored: "Ignoradas",
-  invalidUuid: "UUID inválido", phoneUnavailable: "Telefone indisponível",
+  invalidUuid: "Sem UUID do entregador", uuidReferrals: "Indicados com UUID",
+  unidentified: "Indicados pelo ID do lead", excludedNoPipeline: "Fora das pipelines mapeadas",
+  phoneUnavailable: "Telefone indisponível",
   invalidCpf: "CPF omitido", duplicateUuids: "UUID duplicado", invalidRoutes: "Corridas inválidas",
   invalidDataDate: "Data inválida", dataDateRows: "Linhas com data", sourceRows: "Linhas lidas",
   repeatedRows: "Linhas somadas", totalRoutes: "Corridas na carga",
@@ -953,6 +976,8 @@ const importMetricLabels: Record<string, string> = {
 
 const importActorLabel = (entry: { actor_display_name?: string | null; actor_email: string | null }) =>
   entry.actor_display_name?.trim() || entry.actor_email?.trim() || "Sistema";
+
+const adminReferralKey = (item: AdminReferral) => item.uuid ?? `lead:${item.lead_id ?? item.referral_id}`;
 
 function formatImportTime(value: string | null) {
   return value ? new Date(value).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "—";
@@ -1074,23 +1099,57 @@ function ImportHistoryPanel() {
 
 function ReviewsPanel({ overview, refresh }: { overview: AdminOverview; refresh: () => Promise<void> }) {
   const [reviews, setReviews] = useState<Review[]>(overview.reviews);
+  const [unidentifiedReviews, setUnidentifiedReviews] = useState<Review[]>([]);
+  const [unidentifiedReviewCount, setUnidentifiedReviewCount] = useState(0);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busyId, setBusyId] = useState("");
   const [selectionByReview, setSelectionByReview] = useState<Record<string, string>>({});
   const [loadingMore, setLoadingMore] = useState(false);
   useEffect(() => { setReviews(overview.reviews); }, [overview.reviews]);
+  useEffect(() => {
+    let active = true;
+    const client = getSupabase();
+    if (!client) return;
+    void client.schema(DATA_SCHEMA).from("data_crazy_unidentified_referrals")
+      .select("record_id,lead_id,name,region,raw_influencer", { count: "exact" })
+      .eq("needs_review", true).order("lead_id").range(0, 49)
+      .then(({ data, count, error: queryError }) => {
+        if (!active) return;
+        if (queryError) { setError(queryError.message); return; }
+        setUnidentifiedReviews((data ?? []).map((item) => ({
+          id: item.record_id, uuid: null, lead_id: item.lead_id, is_unidentified: true,
+          name: item.name, region: item.region, raw_influencer: item.raw_influencer, status: "open",
+        })));
+        setUnidentifiedReviewCount(count ?? 0);
+      });
+    return () => { active = false; };
+  }, [overview.reviewCount]);
 
   async function loadMore() {
     const client = getSupabase();
     if (!client) return;
     setLoadingMore(true); setError("");
-    const { data, error: queryError } = await client.schema(DATA_SCHEMA).from("attribution_reviews")
-      .select("id,uuid,name,region,raw_influencer,status")
-      .eq("status", "open").order("created_at").order("id")
-      .range(reviews.length, reviews.length + 49);
-    if (queryError) setError(queryError.message);
-    else setReviews((current) => [...current, ...((data ?? []) as Review[])]);
+    const [uuidResult, unidentifiedResult] = await Promise.all([
+      client.schema(DATA_SCHEMA).from("attribution_reviews")
+        .select("id,uuid,name,region,raw_influencer,status")
+        .eq("status", "open").order("created_at").order("id")
+        .range(reviews.length, reviews.length + 49),
+      client.schema(DATA_SCHEMA).from("data_crazy_unidentified_referrals")
+        .select("record_id,lead_id,name,region,raw_influencer", { count: "exact" })
+        .eq("needs_review", true).order("lead_id")
+        .range(unidentifiedReviews.length, unidentifiedReviews.length + 49),
+    ]);
+    if (uuidResult.error) setError(uuidResult.error.message);
+    else setReviews((current) => [...current, ...((uuidResult.data ?? []) as Review[])]);
+    if (unidentifiedResult.error) setError(unidentifiedResult.error.message);
+    else {
+      setUnidentifiedReviews((current) => [...current, ...((unidentifiedResult.data ?? []).map((item) => ({
+        id: item.record_id, uuid: null, lead_id: item.lead_id, is_unidentified: true,
+        name: item.name, region: item.region, raw_influencer: item.raw_influencer, status: "open",
+      })))]);
+      setUnidentifiedReviewCount(unidentifiedResult.count ?? 0);
+    }
     setLoadingMore(false);
   }
 
@@ -1099,9 +1158,10 @@ function ReviewsPanel({ overview, refresh }: { overview: AdminOverview; refresh:
     if (!influencerId) return;
     setBusyId(review.id); setError(""); setNotice("");
     try {
-      await callAdminApi("review-assign", { reviewId: review.id, influencerId });
+      if (review.lead_id) await callAdminApi("referral-assignment", { leadId: review.lead_id, influencerId });
+      else await callAdminApi("review-assign", { reviewId: review.id, influencerId });
       setSelectionByReview((current) => { const next = { ...current }; delete next[review.id]; return next; });
-      setNotice(`Atribuição de ${review.name || review.uuid} salva.`);
+      setNotice(`Atribuição de ${review.name || review.lead_id || review.uuid} salva.`);
       await refresh();
     }
     catch (cause) { setError(cause instanceof Error ? cause.message : "A atribuição não foi atualizada."); }
@@ -1109,18 +1169,18 @@ function ReviewsPanel({ overview, refresh }: { overview: AdminOverview; refresh:
   }
 
   return <section className="overflow-hidden portal-panel">
-    <div className="border-b border-border-subtle px-4 py-5 sm:px-6"><h2 className="text-base font-semibold">Atribuições para revisar</h2><p className="mt-1 text-sm text-muted-foreground">Escolha o responsável pelos UUIDs ainda sem influenciador.</p></div>
+    <div className="border-b border-border-subtle px-4 py-5 sm:px-6"><h2 className="text-base font-semibold">Atribuições para revisar</h2><p className="mt-1 text-sm text-muted-foreground">Escolha o responsável pelos indicados que aparecem em mais de uma pipeline.</p></div>
     {error && <p role="alert" className="m-4 form-error">{error}</p>}
     {notice && <p role="status" className="mx-4 mt-4 rounded-lg bg-status-success-surface px-3.5 py-3 text-sm text-status-success">{notice}</p>}
-    {reviews.length === 0 ? <EmptyState title="Tudo revisado" detail="Não há atribuições pendentes neste momento."/> : <div className="divide-y divide-[#e6ebf2]">{reviews.map((review) => <div key={review.id} className="grid gap-3 px-4 py-4 sm:grid-cols-[1fr_1fr_auto] sm:items-center sm:px-6">
-      <div><div className="text-sm font-semibold">{review.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-muted-foreground">UUID · {review.uuid}</div>{review.region && <div className="mt-1 text-xs text-muted-foreground">{review.region}</div>}</div>
+    {reviews.length + unidentifiedReviews.length === 0 ? <EmptyState title="Tudo revisado" detail="Não há atribuições pendentes neste momento."/> : <div className="divide-y divide-[#e6ebf2]">{[...reviews, ...unidentifiedReviews].map((review) => <div key={review.id} className="grid gap-3 px-4 py-4 sm:grid-cols-[1fr_1fr_auto] sm:items-center sm:px-6">
+      <div><div className="text-sm font-semibold">{review.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-muted-foreground">{review.lead_id ? `ID do lead · ${review.lead_id}` : `UUID · ${review.uuid}`}</div>{review.region && <div className="mt-1 text-xs text-muted-foreground">{review.region}</div>}</div>
       <div className="rounded-lg bg-status-warning-surface px-3 py-2 text-sm text-status-warning">Recebido: <strong>{review.raw_influencer || "vazio"}</strong></div>
       <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-        <select aria-label={`Atribuir ${review.name || review.uuid}`} value={selectionByReview[review.id] ?? ""} onChange={(event) => { setNotice(""); setSelectionByReview((current) => ({ ...current, [review.id]: event.target.value })); }} disabled={busyId === review.id} className="h-11 min-w-0 rounded-lg border border-input bg-white px-3 text-sm font-semibold text-ink-strong"><option value="">Selecionar influenciador</option>{overview.influencers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+        <select aria-label={`Atribuir ${review.name || review.lead_id || review.uuid}`} value={selectionByReview[review.id] ?? ""} onChange={(event) => { setNotice(""); setSelectionByReview((current) => ({ ...current, [review.id]: event.target.value })); }} disabled={busyId === review.id} className="h-11 min-w-0 rounded-lg border border-input bg-white px-3 text-sm font-semibold text-ink-strong"><option value="">Selecionar influenciador</option>{overview.influencers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
         <button type="button" onClick={() => void assign(review)} disabled={busyId === review.id || !selectionByReview[review.id]} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-3 text-sm font-bold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50">{busyId === review.id ? <LoaderCircle size={15} className="animate-spin"/> : <Check size={15}/>}Salvar atribuição</button>
       </div>
     </div>)}</div>}
-    {(overview.reviewCount ?? reviews.length) > reviews.length && <button disabled={loadingMore} onClick={() => void loadMore()} className="load-more">{loadingMore ? "Carregando…" : "Mostrar mais revisões"}</button>}
+    {(overview.reviewCount ?? (reviews.length + unidentifiedReviewCount)) > reviews.length + unidentifiedReviews.length && <button disabled={loadingMore} onClick={() => void loadMore()} className="load-more">{loadingMore ? "Carregando…" : "Mostrar mais revisões"}</button>}
   </section>;
 }
 
@@ -1259,7 +1319,7 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
   const [actionNotice, setActionNotice] = useState("");
-  const [pendingUuid, setPendingUuid] = useState<string | null>(null);
+  const [pendingReferralId, setPendingReferralId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<{ uuid: string; action: "paid" | "reopen" } | null>(null);
 
   useEffect(() => {
@@ -1320,28 +1380,29 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
     setActionNotice("");
   }
 
-  async function performAssignment(uuid: string, influencerId: string | null) {
-    setPendingUuid(uuid);
+  async function performAssignment(item: AdminReferral, influencerId: string | null) {
+    const referralId = adminReferralKey(item);
+    setPendingReferralId(referralId);
     setActionError("");
     setActionNotice("");
     try {
-      await callAdminApi("referral-assignment", { uuid, influencerId });
+      await callAdminApi("referral-assignment", { uuid: item.uuid, leadId: item.lead_id, influencerId });
       const targetName = influencers.find((item) => item.id === influencerId)?.name
-        ?? influencers.find((item) => item.id === result?.items.find((referral) => referral.uuid === uuid)?.pipeline_influencer_id)?.name
+        ?? influencers.find((candidate) => candidate.id === item.pipeline_influencer_id)?.name
         ?? "a atribuição da Data Crazy";
       setActionNotice("Indicado transferido para " + targetName + ".");
       setRefreshKey((value) => value + 1);
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : "Não foi possível transferir o indicado.");
     } finally {
-      setPendingUuid(null);
+      setPendingReferralId(null);
     }
   }
 
   async function performPaymentAction() {
     if (!confirmation) return;
     const { uuid, action } = confirmation;
-    setPendingUuid(uuid);
+    setPendingReferralId(uuid);
     setActionError("");
     setActionNotice("");
     try {
@@ -1353,7 +1414,7 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
       setActionError(cause instanceof Error ? cause.message : "Não foi possível atualizar o pagamento.");
       setConfirmation(null);
     } finally {
-      setPendingUuid(null);
+      setPendingReferralId(null);
     }
   }
 
@@ -1372,7 +1433,7 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
         <StatCard label="Valor dos prêmios" value={fmtMoney(result?.unlockedPrizeCents ?? 0)} icon={<Award size={17}/>} sub={rewardStatus === "paid" ? "registrado como pago" : "da situação selecionada"} color="plum"/>
       </div>
       <div className="mt-4 space-y-4">
-        <label className="relative block text-xs font-semibold text-muted-foreground"><span className="sr-only">Buscar indicado</span><Search size={16} className="pointer-events-none absolute left-3 top-[13px] text-muted-foreground"/><input type="search" value={search} onChange={(event) => changeSearch(event.target.value)} placeholder="Buscar nome, UUID, telefone ou CPF" className="h-11 w-full rounded-lg border border-input bg-card pl-9 pr-3 text-sm font-medium text-ink-strong outline-none focus:border-[#2f6fc2] focus:ring-2 focus:ring-[#d7e8fa]" /></label>
+        <label className="relative block text-xs font-semibold text-muted-foreground"><span className="sr-only">Buscar indicado</span><Search size={16} className="pointer-events-none absolute left-3 top-[13px] text-muted-foreground"/><input type="search" value={search} onChange={(event) => changeSearch(event.target.value)} placeholder="Buscar nome, UUID, ID do lead, telefone ou CPF" className="h-11 w-full rounded-lg border border-input bg-card pl-9 pr-3 text-sm font-medium text-ink-strong outline-none focus:border-[#2f6fc2] focus:ring-2 focus:ring-[#d7e8fa]" /></label>
         <div>
           <div className="mb-2 text-xs font-semibold text-muted-foreground">Influenciador</div>
           <div role="group" aria-label="Filtrar indicados por influenciador" className="scrollbar-thin flex gap-2 overflow-x-auto pb-1">
@@ -1406,15 +1467,15 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
           const paidAmount = item.paid_amount_cents ?? item.prize_cents;
           const statusText = item.reward_status === "paid" ? "Pago" : item.reward_status === "to_pay" ? "A pagar" : "Em progresso";
           const statusTone = item.reward_status === "paid" ? "bg-status-success-surface text-status-success" : item.reward_status === "to_pay" ? "bg-status-warning-surface text-status-warning" : "bg-brand-soft text-brand-strong";
-          return <article key={item.uuid} className="border-b border-border-subtle p-4 lg:odd:border-r lg:p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><div className="courier-name">{item.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-muted-foreground">UUID · {item.uuid}</div></div><div className="flex flex-col items-end gap-2"><span className="rounded-full bg-brand-soft px-2.5 py-1 text-xs font-bold text-brand-strong">{item.influencer_name}</span><span className={"rounded-full px-2.5 py-1 text-xs font-bold " + statusTone}>{statusText}</span></div></div>
+          return <article key={item.referral_id} className="border-b border-border-subtle p-4 lg:odd:border-r lg:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><div className="courier-name">{item.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-muted-foreground">{item.uuid ? `UUID · ${item.uuid}` : `ID do lead · ${item.lead_id}`}</div></div><div className="flex flex-col items-end gap-2"><span className="rounded-full bg-brand-soft px-2.5 py-1 text-xs font-bold text-brand-strong">{item.influencer_name}</span><span className={"rounded-full px-2.5 py-1 text-xs font-bold " + statusTone}>{statusText}</span></div></div>
             <div className="mt-3 text-xs text-ink-mid">{item.region || "Região não informada"}</div>
             <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><CalendarDays size={13}/>Liberação: {fmtDate(item.released_at)}</div>
-            <div className="mt-3"><div className="flex items-center justify-between gap-3 text-xs"><span className="font-semibold tabular-nums text-ink-strong">{fmtNumber(Number(item.routes))} / {fmtNumber(item.route_goal)} corridas</span><span className="font-bold tabular-nums text-brand-strong">{progress}%</span></div><div className="route-meter mt-1.5 h-1.5" role="progressbar" aria-label={"Progresso de " + (item.name || "entregador")} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-valuetext={fmtNumber(Number(item.routes)) + " de " + fmtNumber(item.route_goal) + " corridas"}><div className="route-meter-fill" style={{ transform: "scaleX(" + (progress / 100) + ")" }}/></div></div>
+            <div className="mt-3"><div className="flex items-center justify-between gap-3 text-xs"><span className="font-semibold tabular-nums text-ink-strong">{fmtNumber(Number(item.routes))} / {fmtNumber(item.route_goal)} corridas</span><span className="font-bold tabular-nums text-brand-strong">{progress}%</span></div><div className="route-meter mt-1.5 h-1.5" role="progressbar" aria-label={"Progresso de " + (item.name || "entregador")} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-valuetext={fmtNumber(Number(item.routes)) + " de " + fmtNumber(item.route_goal) + " corridas"}><div className="route-meter-fill" style={{ transform: "scaleX(" + (progress / 100) + ")" }}/></div>{item.is_unidentified && <p className="mt-2 text-xs leading-5 text-status-warning">Sem UUID para cruzar corridas.</p>}</div>
             <div className="mt-3 flex items-center justify-between gap-2"><span className="text-xs font-bold text-muted-foreground">{item.reward_status === "paid" ? "Pago em " + fmtDate(item.paid_at) + (item.paid_influencer_name ? " para " + item.paid_influencer_name : "") : item.reward_status === "to_pay" ? "Meta atingida · pronto para pagamento" : "Faltam " + fmtNumber(item.routes_remaining) + " corridas"}</span><span className="text-sm font-bold tabular-nums text-ink-strong">{fmtMoney(paidAmount)}</span></div>
             <AdminReferralHistory item={item}/>
             <details className="courier-contact mt-2 border-t border-border-subtle pt-1"><summary className="min-h-11 cursor-pointer py-2 text-xs font-bold text-brand-strong">Ver contato</summary><div className="pb-1 text-xs leading-5 text-ink-mid">Telefone · {item.phone || "indisponível"}<br/>CPF · {item.cpf || "indisponível"}</div></details>
-            <AdminReferralActions key={item.uuid + ":" + item.influencer_id} item={item} influencers={influencers} busy={pendingUuid === item.uuid} onAssign={performAssignment} onRequestConfirm={setConfirmation}/>
+            <AdminReferralActions key={adminReferralKey(item) + ":" + item.influencer_id} item={item} influencers={influencers} busy={pendingReferralId === adminReferralKey(item)} onAssign={performAssignment} onRequestConfirm={setConfirmation}/>
           </article>;
         })}</div>
       </div>
@@ -1427,19 +1488,19 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
             const paidAmount = item.paid_amount_cents ?? item.prize_cents;
             const statusText = item.reward_status === "paid" ? "Pago" : item.reward_status === "to_pay" ? "A pagar" : "Em progresso";
             const statusTone = item.reward_status === "paid" ? "bg-status-success-surface text-status-success" : item.reward_status === "to_pay" ? "bg-status-warning-surface text-status-warning" : "bg-brand-soft text-brand-strong";
-            return <tr key={item.uuid} className="align-top hover:bg-surface-subtle/70">
-              <td className="max-w-[300px] px-4 py-4"><div className="courier-name">{item.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-muted-foreground">{item.uuid}</div><div className="mt-1 text-xs text-muted-foreground">{item.region || "Região não informada"} · Liberação: {fmtDate(item.released_at)}</div><details className="courier-contact mt-1"><summary className="min-h-11 cursor-pointer py-2 text-xs font-bold text-brand-strong">Ver contato</summary><div className="pb-1 text-xs leading-5 text-ink-mid">Telefone · {item.phone || "indisponível"}<br/>CPF · {item.cpf || "indisponível"}</div></details><AdminReferralHistory item={item}/></td>
+            return <tr key={item.referral_id} className="align-top hover:bg-surface-subtle/70">
+              <td className="max-w-[300px] px-4 py-4"><div className="courier-name">{item.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-muted-foreground">{item.uuid ? `UUID · ${item.uuid}` : `ID do lead · ${item.lead_id}`}</div><div className="mt-1 text-xs text-muted-foreground">{item.region || "Região não informada"} · Liberação: {fmtDate(item.released_at)}</div><details className="courier-contact mt-1"><summary className="min-h-11 cursor-pointer py-2 text-xs font-bold text-brand-strong">Ver contato</summary><div className="pb-1 text-xs leading-5 text-ink-mid">Telefone · {item.phone || "indisponível"}<br/>CPF · {item.cpf || "indisponível"}</div></details><AdminReferralHistory item={item}/></td>
               <td className="px-4 py-4"><div className="text-sm font-semibold text-ink-strong">{item.influencer_name}</div><span className={"mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-bold " + statusTone}>{statusText}</span></td>
-              <td className="w-[245px] px-4 py-4"><div className="flex justify-between gap-3 text-xs"><span className="font-semibold tabular-nums text-ink-strong">{fmtNumber(Number(item.routes))} / {fmtNumber(item.route_goal)}</span><span className="font-bold tabular-nums text-brand-strong">{progress}%</span></div><div className="route-meter mt-1.5 h-1.5" role="progressbar" aria-label={"Progresso de " + (item.name || "entregador")} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-valuetext={fmtNumber(Number(item.routes)) + " de " + fmtNumber(item.route_goal) + " corridas"}><div className="route-meter-fill" style={{ transform: "scaleX(" + (progress / 100) + ")" }}/></div><div className="mt-2 text-xs text-muted-foreground">{item.reward_status === "paid" ? "Pago em " + fmtDate(item.paid_at) : item.reward_status === "to_pay" ? "Meta atingida" : "Faltam " + fmtNumber(item.routes_remaining) + " corridas"}</div></td>
+              <td className="w-[245px] px-4 py-4"><div className="flex justify-between gap-3 text-xs"><span className="font-semibold tabular-nums text-ink-strong">{fmtNumber(Number(item.routes))} / {fmtNumber(item.route_goal)}</span><span className="font-bold tabular-nums text-brand-strong">{progress}%</span></div><div className="route-meter mt-1.5 h-1.5" role="progressbar" aria-label={"Progresso de " + (item.name || "entregador")} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-valuetext={fmtNumber(Number(item.routes)) + " de " + fmtNumber(item.route_goal) + " corridas"}><div className="route-meter-fill" style={{ transform: "scaleX(" + (progress / 100) + ")" }}/></div>{item.is_unidentified && <div className="mt-2 text-xs text-status-warning">Sem UUID para cruzar corridas.</div>}<div className="mt-2 text-xs text-muted-foreground">{item.reward_status === "paid" ? "Pago em " + fmtDate(item.paid_at) : item.reward_status === "to_pay" ? "Meta atingida" : "Faltam " + fmtNumber(item.routes_remaining) + " corridas"}</div></td>
               <td className="px-4 py-4"><div className="text-sm font-bold tabular-nums text-ink-strong">{fmtMoney(paidAmount)}</div>{item.reward_status === "paid" && item.paid_influencer_name && <div className="mt-1 text-xs text-muted-foreground">Pago para {item.paid_influencer_name}</div>}</td>
-              <td className="min-w-[290px] px-4 py-4"><AdminReferralActions key={item.uuid + ":" + item.influencer_id} item={item} influencers={influencers} busy={pendingUuid === item.uuid} onAssign={performAssignment} onRequestConfirm={setConfirmation}/></td>
+              <td className="min-w-[290px] px-4 py-4"><AdminReferralActions key={adminReferralKey(item) + ":" + item.influencer_id} item={item} influencers={influencers} busy={pendingReferralId === adminReferralKey(item)} onAssign={performAssignment} onRequestConfirm={setConfirmation}/></td>
             </tr>;
           })}</tbody>
         </table></div>
       </div>
       <div className="flex flex-col justify-between gap-3 text-xs text-muted-foreground sm:flex-row sm:items-center"><span>{loading ? "Atualizando resultados… · " : ""}{fmtNumber(firstItem)}–{fmtNumber(lastItem)} de {fmtNumber(result.total)} indicados nesta guia</span><div className="flex gap-2"><button type="button" onClick={() => setPage((value) => Math.max(0, value - 1))} disabled={page === 0 || loading} className="min-h-10 rounded-lg border border-input bg-card px-3 font-semibold text-ink-mid hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50">Anterior</button><button type="button" onClick={() => setPage((value) => value + 1)} disabled={(page + 1) * pageSize >= result.total || loading} className="min-h-10 rounded-lg border border-input bg-card px-3 font-semibold text-ink-mid hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50">Próxima</button></div></div>
     </> : null}
-    <AlertDialog open={Boolean(confirmation)} onOpenChange={(open) => { if (!open && !pendingUuid) setConfirmation(null); }}>
+    <AlertDialog open={Boolean(confirmation)} onOpenChange={(open) => { if (!open && !pendingReferralId) setConfirmation(null); }}>
       <AlertDialogContent className="border-border bg-card">
         <AlertDialogHeader>
           <AlertDialogMedia className={confirmation?.action === "reopen" ? "bg-status-warning-surface text-status-warning" : "bg-status-success-surface text-status-success"}>{confirmation?.action === "reopen" ? <RotateCcw size={22}/> : <CheckCircle2 size={22}/>}</AlertDialogMedia>
@@ -1451,9 +1512,9 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel className="min-h-11" disabled={Boolean(pendingUuid)}>Voltar</AlertDialogCancel>
-          <AlertDialogAction onClick={() => void performPaymentAction()} disabled={Boolean(pendingUuid)} className="min-h-11">
-            {pendingUuid ? "Salvando…" : confirmation?.action === "reopen" ? "Reabrir pagamento" : "Confirmar pagamento"}
+          <AlertDialogCancel className="min-h-11" disabled={Boolean(pendingReferralId)}>Voltar</AlertDialogCancel>
+          <AlertDialogAction onClick={() => void performPaymentAction()} disabled={Boolean(pendingReferralId)} className="min-h-11">
+            {pendingReferralId ? "Salvando…" : confirmation?.action === "reopen" ? "Reabrir pagamento" : "Confirmar pagamento"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -1463,7 +1524,7 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
 
 function AdminReferralActions({ item, influencers, busy, onAssign, onRequestConfirm }: {
   item: AdminReferral; influencers: Influencer[]; busy: boolean;
-  onAssign: (uuid: string, influencerId: string | null) => void;
+  onAssign: (item: AdminReferral, influencerId: string | null) => void;
   onRequestConfirm: (confirmation: { uuid: string; action: "paid" | "reopen" } | null) => void;
 }) {
   const [destination, setDestination] = useState(item.influencer_id);
@@ -1477,14 +1538,14 @@ function AdminReferralActions({ item, influencers, busy, onAssign, onRequestConf
     <label className="block text-xs font-semibold text-muted-foreground">
       Transferir para
       <select aria-label={"Transferir " + (item.name || "entregador")} value={destination} onChange={(event) => setDestination(event.target.value)} disabled={busy} className="mt-1.5 h-11 w-full rounded-lg border border-input bg-card px-3 text-sm font-medium text-ink-strong focus:border-ring focus:outline-none focus:ring-2 focus:ring-focus-surface disabled:opacity-60">
-        {item.assignment_overridden && <option value="__pipeline__">Atribuição Data Crazy · {item.pipeline_influencer_name}</option>}
+        {item.assignment_overridden && item.pipeline_influencer_id && <option value="__pipeline__">Atribuição Data Crazy · {item.pipeline_influencer_name}</option>}
         {influencers.map((influencer) => <option key={influencer.id} value={influencer.id}>{influencer.name}</option>)}
       </select>
     </label>
     <div className="flex flex-wrap gap-2">
-      <button type="button" onClick={() => onAssign(item.uuid, shouldClearOverride ? null : targetId)} disabled={busy || !assignmentChanged} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-input bg-card px-3 text-xs font-semibold text-ink-mid hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50"><ArrowRightLeft size={14}/>{busy ? "Salvando…" : "Transferir"}</button>
-      {item.reward_status === "to_pay" && <button type="button" onClick={() => onRequestConfirm({ uuid: item.uuid, action: "paid" })} disabled={busy} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-bold text-white hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-55"><Check size={14}/>Marcar como pago</button>}
-      {item.reward_status === "paid" && <button type="button" onClick={() => onRequestConfirm({ uuid: item.uuid, action: "reopen" })} disabled={busy} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-input bg-card px-3 text-xs font-semibold text-ink-mid hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-55"><RotateCcw size={14}/>Reabrir pagamento</button>}
+      <button type="button" onClick={() => onAssign(item, shouldClearOverride ? null : targetId)} disabled={busy || !assignmentChanged} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-input bg-card px-3 text-xs font-semibold text-ink-mid hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50"><ArrowRightLeft size={14}/>{busy ? "Salvando…" : "Transferir"}</button>
+      {item.reward_status === "to_pay" && item.uuid && <button type="button" onClick={() => onRequestConfirm({ uuid: item.uuid!, action: "paid" })} disabled={busy} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-bold text-white hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-55"><Check size={14}/>Marcar como pago</button>}
+      {item.reward_status === "paid" && item.uuid && <button type="button" onClick={() => onRequestConfirm({ uuid: item.uuid!, action: "reopen" })} disabled={busy} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-input bg-card px-3 text-xs font-semibold text-ink-mid hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-55"><RotateCcw size={14}/>Reabrir pagamento</button>}
     </div>
     {item.assignment_overridden && <p className="text-xs leading-5 text-muted-foreground">Transferência manual. A próxima sincronização manterá este responsável.</p>}
   </div>;

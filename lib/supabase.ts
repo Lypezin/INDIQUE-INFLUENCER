@@ -95,10 +95,15 @@ export async function callAdminApi<T>(
     });
     data = result.data; error = result.error;
   } else if (action === "referral-assignment") {
-    const result = await supabase.schema(DATA_SCHEMA).rpc("set_admin_referral_assignment", {
-      p_courier_uuid: payload.uuid,
-      p_influencer_id: payload.influencerId,
-    });
+    const result = payload.leadId
+      ? await supabase.schema(DATA_SCHEMA).rpc("set_admin_unidentified_referral_assignment", {
+        p_lead_id: payload.leadId,
+        p_influencer_id: payload.influencerId,
+      })
+      : await supabase.schema(DATA_SCHEMA).rpc("set_admin_referral_assignment", {
+        p_courier_uuid: payload.uuid,
+        p_influencer_id: payload.influencerId,
+      });
     data = result.data; error = result.error;
   } else if (action === "referral-mark-paid") {
     const result = await supabase.schema(DATA_SCHEMA).rpc("mark_admin_referral_paid", {
