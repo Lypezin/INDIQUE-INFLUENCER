@@ -40,6 +40,8 @@ type Claim = {
   businessMonth: string;
   leadMonth: string;
   snapshotUntil: string;
+  leadStageIds: string[];
+  leadFilterFallback: boolean;
 };
 
 class SyncError extends Error {
@@ -274,7 +276,10 @@ function businessRow(value: unknown): JsonObject | null {
   const pipelineId = text(pipeline?.id ?? stage?.pipelineId ?? business.pipelineId).toLowerCase();
   const influencerId = PIPELINES[pipelineId]?.influencerId;
   const pipelineName = text(pipeline?.name ?? stage?.pipelineName ?? business.pipelineName);
-  return businessId && leadId && influencerId ? { businessId, leadId, influencerId, pipelineName } : null;
+  const stageId = text(stage?.id ?? business.stageId).toLowerCase();
+  return businessId && leadId && influencerId
+    ? { businessId, leadId, influencerId, pipelineName, stageId: UUID.test(stageId) ? stageId : null }
+    : null;
 }
 
 function leadRow(value: unknown): JsonObject | null {
@@ -283,7 +288,7 @@ function leadRow(value: unknown): JsonObject | null {
   const leadId = sourceId(lead.id);
   const fields = extraFields(lead);
   const uuid = canonicalUuid(extraValue(fields.get("iddoentregador")));
-  if (!leadId || !uuid) return null;
+  if (!leadId) return null;
   const region = fieldText(extraValue(fields.get("regioes"))) || fieldText(object(lead.address)?.city);
   const releasedAt = dateOnly(extraValue(fields.get("liberadodia")));
   const number = phone(lead.rawPhone ?? lead.phone);
@@ -314,6 +319,9 @@ function toClaim(value: unknown): Claim | null {
   if (!runId || !leaseToken || !/^\d{4}-\d{2}-\d{2}$/.test(businessMonth)
     || !/^\d{4}-\d{2}-\d{2}$/.test(leadMonth) || !Number.isFinite(Date.parse(snapshotUntil))
     || (phase !== "businesses" && phase !== "leads" && phase !== "ready")) return null;
+  const leadStageIds = Array.isArray(item.leadStageIds)
+    ? [...new Set(item.leadStageIds.map(text).map((value) => value.toLowerCase()).filter((value) => UUID.test(value)))]
+    : [];
   return {
     runId,
     leaseToken,
@@ -323,6 +331,8 @@ function toClaim(value: unknown): Claim | null {
     businessMonth,
     leadMonth,
     snapshotUntil,
+    leadStageIds,
+    leadFilterFallback: item.leadFilterFallback === true,
   };
 }
 
@@ -421,14 +431,19 @@ function nextMonth(month: string): string {
   return date.toISOString().slice(0, 10);
 }
 
-function pageParams(phase: Claim["phase"], skip: number, month: string, snapshotUntil: string): URLSearchParams {
+function pageParams(phase: Claim["phase"], skip: number, month: string, snapshotUntil: string, leadStageIds: string[], leadFilterFallback: boolean): URLSearchParams {
   const params = new URLSearchParams({ skip: String(skip), take: String(PAGE_SIZE) });
   const start = `${month}T00:00:00.000Z`;
   const end = new Date(Math.min(Date.parse(snapshotUntil), Date.parse(`${nextMonth(month)}T00:00:00.000Z`) - 1));
   if (start > end.toISOString()) throw new SyncError("Janela de coleta inválida.", false);
   params.set("filter[createdAtGreaterOrEqual]", start);
   params.set("filter[createdAtLessOrEqual]", end.toISOString());
-  if (phase === "leads") params.set("complete[additionalFields]", "true");
+  if (phase === "leads") {
+    params.set("complete[additionalFields]", "true");
+    if (!leadFilterFallback && leadStageIds.length > 0) {
+      params.set("filter[stages]", "some " + leadStageIds.join(","));
+    }
+  }
   return params;
 }
 
@@ -454,6 +469,29 @@ async function fail(service: SupabaseClient, claim: Claim, message: string): Pro
   });
 }
 
+async function prepareLeadScanOrPublish(
+  service: SupabaseClient,
+  claim: Claim,
+  reason: "filter_error" | "coverage_check",
+): Promise<boolean> {
+  const result = object(rpcData(
+    await service.schema(DATA_SCHEMA).rpc("fallback_data_crazy_lead_filter", {
+      p_run_id: claim.runId,
+      p_lease_token: claim.leaseToken,
+      p_reason: reason,
+    }),
+    "Não foi possível validar os leads das pipelines.",
+  ));
+  const phase = text(result?.phase);
+  if (phase === "ready") return true;
+  if (phase !== "leads") throw new SyncError("Estado inesperado ao retomar a busca de leads.", false);
+  claim.phase = "leads";
+  claim.leadsSkip = 0;
+  claim.leadMonth = FIRST_SYNC_MONTH;
+  claim.leadFilterFallback = true;
+  return false;
+}
+
 async function work(service: SupabaseClient, env: Env, runId?: string, maxPages = MAX_PAGES_PER_INVOCATION): Promise<JsonObject | null> {
   const claimResult = await service.schema(DATA_SCHEMA).rpc("claim_data_crazy_sync", { p_run_id: runId ?? null });
   if (claimResult.error) throw new SyncError("Não foi possível reservar a sincronização.", false);
@@ -466,6 +504,7 @@ async function work(service: SupabaseClient, env: Env, runId?: string, maxPages 
     let pauseSeconds = 1;
     for (let page = 0; page < maxPages; page += 1) {
       if (claim.phase === "ready") {
+        if (!await prepareLeadScanOrPublish(service, claim, "coverage_check")) continue;
         rpcData(await service.schema(DATA_SCHEMA).rpc("publish_data_crazy_sync", {
           p_run_id: claim.runId,
           p_lease_token: claim.leaseToken,
@@ -476,7 +515,21 @@ async function work(service: SupabaseClient, env: Env, runId?: string, maxPages 
       const phase = claim.phase;
       const cursor = phase === "businesses" ? claim.businessesSkip : claim.leadsSkip;
       const month = phase === "businesses" ? claim.businessMonth : claim.leadMonth;
-      const source = await apiGet(env, phase, pageParams(phase, cursor, month, claim.snapshotUntil));
+      let source: Awaited<ReturnType<typeof apiGet>>;
+      try {
+        source = await apiGet(
+          env,
+          phase,
+          pageParams(phase, cursor, month, claim.snapshotUntil, claim.leadStageIds, claim.leadFilterFallback),
+        );
+      } catch (error) {
+        const filterRejected = error instanceof SyncError && /HTTP (400|404|422)\b/.test(error.message);
+        if (phase === "leads" && !claim.leadFilterFallback && claim.leadStageIds.length > 0 && filterRejected) {
+          await prepareLeadScanOrPublish(service, claim, "filter_error");
+          continue;
+        }
+        throw error;
+      }
       const nextCursor = cursor + source.data.length;
       const done = source.data.length < PAGE_SIZE;
       if (!done && nextCursor >= 10_000) {
@@ -507,6 +560,21 @@ async function work(service: SupabaseClient, env: Env, runId?: string, maxPages 
         throw new SyncError("Cursor inesperado da sincronização.", false);
       }
       if (phase === "businesses") {
+        const businessRows = rows as JsonObject[];
+        const pageStageIds = businessRows
+          .map((row) => text(row.stageId).toLowerCase())
+          .filter((stageId) => UUID.test(stageId));
+        const missingStageId = businessRows.some((row) => !UUID.test(text(row.stageId)));
+        rpcData(await service.schema(DATA_SCHEMA).rpc("record_data_crazy_sync_stages", {
+          p_run_id: claim.runId,
+          p_lease_token: claim.leaseToken,
+          p_stage_ids: pageStageIds,
+          p_force_full_scan: missingStageId,
+        }), "Não foi possível registrar as etapas das pipelines.");
+        claim.leadStageIds = [...new Set([...claim.leadStageIds, ...pageStageIds])].sort();
+        claim.leadFilterFallback = claim.leadFilterFallback || missingStageId;
+      }
+      if (phase === "businesses") {
         claim.businessesSkip = done ? 0 : nextCursor;
         if (done && nextPhase === "businesses") claim.businessMonth = nextMonth(month);
       } else {
@@ -519,7 +587,7 @@ async function work(service: SupabaseClient, env: Env, runId?: string, maxPages 
         break;
       }
     }
-    if (claim.phase === "ready" && !published) {
+    if (claim.phase === "ready" && !published && await prepareLeadScanOrPublish(service, claim, "coverage_check")) {
       rpcData(await service.schema(DATA_SCHEMA).rpc("publish_data_crazy_sync", {
         p_run_id: claim.runId,
         p_lease_token: claim.leaseToken,
