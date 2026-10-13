@@ -3,9 +3,9 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent, type FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
-  ArrowDownUp, ArrowRight, Award, BarChart3, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
+  ArrowDownUp, ArrowRight, ArrowRightLeft, Award, BarChart3, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   CircleAlert, ClipboardList, CloudUpload, Download, Eye, EyeOff, FileSpreadsheet,
-  CalendarDays, Gift, History, LoaderCircle, LogOut, Mail, MapPin, Menu, Moon, RefreshCw, Search, ShieldCheck, Sun, UserRound, Users, XCircle,
+  CalendarDays, Gift, History, LoaderCircle, LogOut, Mail, MapPin, Menu, Moon, RefreshCw, RotateCcw, Search, ShieldCheck, Sun, UserRound, Users, XCircle,
 } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -59,8 +59,21 @@ type PendingInvite = { id: string; email: string; role: Role; influencer_name: s
 type AdminOverview = { influencers: Influencer[]; availableInfluencers: Influencer[]; imports: ImportSummary[]; reviews: Review[]; reviewCount: number; members: Member[]; invites: PendingInvite[]; referralCount: number; contributionTotal: number };
 type PerformanceCoverageCity = { city: string; firstDate: string | null; lastDate: string | null; rowCount: number; importCount: number };
 type PerformanceCoverage = { firstDate: string | null; lastDate: string | null; rowCount: number; importCount: number; uncapturedImportCount: number; cities: PerformanceCoverageCity[] };
-type AdminReferral = { uuid: string; name: string; region: string | null; released_at: string | null; phone: string | null; cpf: string | null; influencer_id: string; influencer_name: string; routes: number; route_goal: number; prize_cents: number; prize_unlocked: boolean; routes_remaining: number };
-type AdminReferralsResult = { items: AdminReferral[]; total: number; totalRoutes: number; unlockedCount: number; unlockedPrizeCents: number };
+type AdminReferralStatus = "progress" | "to_pay" | "paid";
+type AdminReferralEvent = {
+  event_type: "assignment_changed" | "reward_paid" | "payment_reopened";
+  actor_display_name: string; actor_email: string; old_influencer_name: string | null;
+  new_influencer_name: string | null; amount_cents: number | null; occurred_at: string;
+};
+type AdminReferral = {
+  uuid: string; name: string; region: string | null; released_at: string | null; phone: string | null; cpf: string | null;
+  influencer_id: string; influencer_name: string; pipeline_influencer_id: string; pipeline_influencer_name: string;
+  assignment_overridden: boolean; routes: number; route_goal: number; prize_cents: number; prize_unlocked: boolean;
+  routes_remaining: number; reward_status: AdminReferralStatus; paid_at: string | null; paid_amount_cents: number | null;
+  paid_influencer_id: string | null; paid_influencer_name: string | null; recent_events: AdminReferralEvent[];
+};
+type AdminReferralStatusCounts = Record<AdminReferralStatus, number>;
+type AdminReferralsResult = { items: AdminReferral[]; total: number; totalRoutes: number; unlockedCount: number; unlockedPrizeCents: number; statusCounts: AdminReferralStatusCounts };
 type TabId = "dashboard" | "referrals" | "data-crazy" | "performance" | "reviews" | "accounts" | "profile" | "imports";
 type Theme = "light" | "dark";
 
@@ -100,7 +113,7 @@ const adminTabs: { id: TabId; label: string; icon: typeof BarChart3 }[] = [
 
 const adminTabDescriptions: Record<TabId, string> = {
   dashboard: "Acompanhe a base, as corridas e o que precisa de atenção.",
-  referrals: "Entregadores atribuídos, metas e prêmios em um só lugar.",
+  referrals: "Acompanhe o progresso, transfira responsáveis e controle pagamentos.",
   "data-crazy": "Base de entregadores, corridas e movimentações registradas.",
   performance: "Some novas corridas ao histórico e acompanhe a cobertura dos dados.",
   reviews: "Resolva entregadores sem atribuição clara.",
@@ -1183,23 +1196,30 @@ function ProfileSettingsPanel({ profile, onAdminNameSaved }: { profile: Profile;
 function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
   const pageSize = 50;
   const [filterId, setFilterId] = useState("all");
+  const [rewardStatus, setRewardStatus] = useState<AdminReferralStatus>("progress");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
   const [result, setResult] = useState<AdminReferralsResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [actionNotice, setActionNotice] = useState("");
+  const [pendingUuid, setPendingUuid] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<{ uuid: string; action: "paid" | "reopen" } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const timeout = window.setTimeout(async () => {
-      setLoading(true); setError("");
+      setLoading(true);
+      setError("");
       try {
         const pageResult = await callAdminApi<AdminReferralsResult>("admin-referrals", {
           limit: pageSize,
           offset: page * pageSize,
           influencerId: filterId,
           search: search.trim(),
+          rewardStatus,
         });
         if (!cancelled) setResult({
           ...pageResult,
@@ -1216,14 +1236,21 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
       }
     }, search.trim() ? 250 : 0);
     return () => { cancelled = true; window.clearTimeout(timeout); };
-  }, [filterId, page, refreshKey, search]);
+  }, [filterId, page, refreshKey, rewardStatus, search]);
 
   const firstItem = result && result.total > 0 ? page * pageSize + 1 : 0;
   const lastItem = result ? Math.min((page + 1) * pageSize, result.total) : 0;
+  const statusCounts = result?.statusCounts ?? { progress: 0, to_pay: 0, paid: 0 };
+  const statusTabs: { id: AdminReferralStatus; label: string; count: number; icon: typeof BarChart3; tone: string }[] = [
+    { id: "progress", label: "Em progresso", count: statusCounts.progress, icon: BarChart3, tone: "blue" },
+    { id: "to_pay", label: "A pagar", count: statusCounts.to_pay, icon: Gift, tone: "amber" },
+    { id: "paid", label: "Pagos", count: statusCounts.paid, icon: CheckCircle2, tone: "green" },
+  ];
 
   function changeFilter(value: string) {
     setFilterId(value);
     setPage(0);
+    setResult(null);
   }
 
   function changeSearch(value: string) {
@@ -1231,52 +1258,201 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
     setPage(0);
   }
 
+  function changeStatus(value: AdminReferralStatus) {
+    setRewardStatus(value);
+    setPage(0);
+    setResult(null);
+    setActionError("");
+    setActionNotice("");
+  }
+
+  async function performAssignment(uuid: string, influencerId: string | null) {
+    setPendingUuid(uuid);
+    setActionError("");
+    setActionNotice("");
+    try {
+      await callAdminApi("referral-assignment", { uuid, influencerId });
+      const targetName = influencers.find((item) => item.id === influencerId)?.name
+        ?? influencers.find((item) => item.id === result?.items.find((referral) => referral.uuid === uuid)?.pipeline_influencer_id)?.name
+        ?? "a atribuição da Data Crazy";
+      setActionNotice("Indicado transferido para " + targetName + ".");
+      setRefreshKey((value) => value + 1);
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "Não foi possível transferir o indicado.");
+    } finally {
+      setPendingUuid(null);
+    }
+  }
+
+  async function performPaymentAction() {
+    if (!confirmation) return;
+    const { uuid, action } = confirmation;
+    setPendingUuid(uuid);
+    setActionError("");
+    setActionNotice("");
+    try {
+      await callAdminApi(action === "paid" ? "referral-mark-paid" : "referral-reopen-payment", { uuid });
+      setActionNotice(action === "paid" ? "Pagamento registrado. O indicado foi movido para Pagos." : "Pagamento reaberto. O indicado voltou para A pagar.");
+      setConfirmation(null);
+      setRefreshKey((value) => value + 1);
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "Não foi possível atualizar o pagamento.");
+      setConfirmation(null);
+    } finally {
+      setPendingUuid(null);
+    }
+  }
+
+  const confirmationReferral = confirmation ? result?.items.find((item) => item.uuid === confirmation.uuid) : null;
+
   return <div className="space-y-4">
     <section className="portal-panel p-5 sm:p-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-        <div><h2 className="text-lg font-bold tracking-[-.02em]">Todos os indicados</h2><p className="mt-1 text-sm text-muted-foreground">Consulte os entregadores, corridas e metas de cada influenciador.</p></div>
-        <button type="button" onClick={() => setRefreshKey((value) => value + 1)} disabled={loading} className="inline-flex h-11 w-fit items-center gap-2 rounded-lg border border-input bg-white px-3.5 text-sm font-semibold text-[#536d70] hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc2] disabled:opacity-55"><History size={15}/>{loading ? "Atualizando…" : "Atualizar lista"}</button>
+        <div><h2 className="text-lg font-bold tracking-[-.02em]">Indicados</h2><p className="mt-1 max-w-2xl text-sm text-muted-foreground">Acompanhe as metas, organize os pagamentos e transfira entregadores entre influenciadores.</p></div>
+        <button type="button" onClick={() => setRefreshKey((value) => value + 1)} disabled={loading} className="inline-flex min-h-11 w-fit items-center gap-2 rounded-lg border border-input bg-card px-3.5 text-sm font-semibold text-ink-mid hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc2] disabled:opacity-55"><History size={15}/>{loading ? "Atualizando…" : "Atualizar lista"}</button>
       </div>
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Indicados no filtro" value={fmtNumber(result?.total ?? 0)} icon={<Users size={17}/>} sub="entregadores atribuídos" color="teal"/>
+        <StatCard label="Entregadores nesta guia" value={fmtNumber(result?.total ?? 0)} icon={<Users size={17}/>} sub="com os filtros atuais" color="teal"/>
         <StatCard label="Corridas acumuladas" value={fmtNumber(result?.totalRoutes ?? 0)} icon={<BarChart3 size={17}/>} sub="somadas por UUID" color="blue"/>
-        <StatCard label="Prêmios liberados" value={fmtNumber(result?.unlockedCount ?? 0)} icon={<CheckCircle2 size={17}/>} sub="um por entregador ao atingir a meta" color="gold"/>
-        <StatCard label="Valor dos prêmios" value={fmtMoney(result?.unlockedPrizeCents ?? 0)} icon={<Award size={17}/>} sub="total liberado, sem controle de pagamento" color="plum"/>
+        <StatCard label="Metas atingidas" value={fmtNumber(result?.unlockedCount ?? 0)} icon={<CheckCircle2 size={17}/>} sub="na situação selecionada" color="gold"/>
+        <StatCard label="Valor dos prêmios" value={fmtMoney(result?.unlockedPrizeCents ?? 0)} icon={<Award size={17}/>} sub={rewardStatus === "paid" ? "registrado como pago" : "da situação selecionada"} color="plum"/>
       </div>
-      <div className="mt-4 space-y-3">
-        <label className="relative block text-xs font-semibold text-muted-foreground"><span className="sr-only">Buscar indicado</span><Search size={16} className="pointer-events-none absolute left-3 top-[13px] text-[#8091a4]"/><input type="search" value={search} onChange={(event) => changeSearch(event.target.value)} placeholder="Buscar nome, UUID, telefone ou CPF" className="h-11 w-full rounded-lg border border-input bg-white pl-9 pr-3 text-sm font-medium text-ink-strong outline-none focus:border-[#2f6fc2] focus:ring-2 focus:ring-[#d7e8fa]" /></label>
-        <div role="group" aria-label="Filtrar indicados por influenciador" className="scrollbar-thin flex gap-2 overflow-x-auto pb-2">
-          {[{ id: "all", name: "Todos" }, ...influencers].map((item) => <button key={item.id} type="button" onClick={() => changeFilter(item.id)} aria-pressed={filterId === item.id} className={`min-h-10 shrink-0 rounded-full border px-3.5 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc2] ${filterId === item.id ? "border-[#185aa9] bg-primary text-white" : "border-input bg-white text-[#536d70] hover:bg-surface-subtle"}`}>{item.name}</button>)}
+      <div className="mt-4 space-y-4">
+        <label className="relative block text-xs font-semibold text-muted-foreground"><span className="sr-only">Buscar indicado</span><Search size={16} className="pointer-events-none absolute left-3 top-[13px] text-muted-foreground"/><input type="search" value={search} onChange={(event) => changeSearch(event.target.value)} placeholder="Buscar nome, UUID, telefone ou CPF" className="h-11 w-full rounded-lg border border-input bg-card pl-9 pr-3 text-sm font-medium text-ink-strong outline-none focus:border-[#2f6fc2] focus:ring-2 focus:ring-[#d7e8fa]" /></label>
+        <div>
+          <div className="mb-2 text-xs font-semibold text-muted-foreground">Influenciador</div>
+          <div role="group" aria-label="Filtrar indicados por influenciador" className="scrollbar-thin flex gap-2 overflow-x-auto pb-1">
+            {[{ id: "all", name: "Todos" }, ...influencers].map((item) => <button key={item.id} type="button" onClick={() => changeFilter(item.id)} aria-pressed={filterId === item.id} className={"min-h-10 shrink-0 rounded-full border px-3.5 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc2] " + (filterId === item.id ? "border-[#185aa9] bg-primary text-white" : "border-input bg-card text-ink-mid hover:bg-surface-subtle")}>{item.name}</button>)}
+          </div>
+        </div>
+        <div>
+          <div className="mb-2 text-xs font-semibold text-muted-foreground">Situação do prêmio</div>
+          <div role="group" aria-label="Filtrar indicados pela situação do prêmio" className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {statusTabs.map((tab) => {
+              const Icon = tab.icon;
+              const activeClasses = tab.tone === "amber" ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100"
+                : tab.tone === "green" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-100"
+                  : "border-blue-300 bg-blue-50 text-blue-900 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-100";
+              return <button key={tab.id} type="button" onClick={() => changeStatus(tab.id)} aria-pressed={rewardStatus === tab.id} className={"flex min-h-12 items-center justify-between gap-3 rounded-lg border px-3.5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc6] " + (rewardStatus === tab.id ? activeClasses : "border-border bg-card text-ink-mid hover:bg-surface-subtle")}>
+                <span className="inline-flex items-center gap-2"><Icon size={16}/>{tab.label}</span><span className="min-w-8 rounded-full bg-background/70 px-2 py-0.5 text-center text-xs tabular-nums">{fmtNumber(tab.count)}</span>
+              </button>;
+            })}
+          </div>
         </div>
       </div>
     </section>
 
     {error && <p role="alert" className="rounded-xl bg-status-danger-surface px-4 py-3 text-sm text-status-danger">{error}</p>}
-    {loading && !result ? <div className="grid min-h-56 place-items-center portal-panel text-sm text-muted-foreground"><LoaderCircle className="mr-2 animate-spin" size={18}/>Carregando indicados…</div> : result?.items.length === 0 ? <div className="portal-panel"><EmptyState title="Nenhum indicado encontrado" detail={search || filterId !== "all" ? "Ajuste o filtro ou a busca para ver outros resultados." : "Os indicados atribuídos aparecerão depois da importação do Data Crazy."}/></div> : result ? <>
+    {actionError && <p role="alert" className="rounded-xl bg-status-danger-surface px-4 py-3 text-sm text-status-danger">{actionError}</p>}
+    {actionNotice && <p role="status" className="rounded-xl bg-status-success-surface px-4 py-3 text-sm text-status-success">{actionNotice}</p>}
+    {loading && !result ? <div className="grid min-h-56 place-items-center portal-panel text-sm text-muted-foreground"><LoaderCircle className="mr-2 animate-spin" size={18}/>Carregando indicados…</div> : result?.items.length === 0 ? <div className="portal-panel"><EmptyState title={rewardStatus === "progress" ? "Nenhum indicado em progresso" : rewardStatus === "to_pay" ? "Nenhum pagamento pendente" : "Nenhum pagamento registrado"} detail={rewardStatus === "to_pay" ? "Quando um entregador atingir a meta, ele aparecerá aqui para você registrar o pagamento." : rewardStatus === "paid" ? "Os indicados pagos aparecerão aqui, com a data e o valor registrados." : "Os entregadores com corridas abaixo da meta aparecerão aqui. Ajuste os filtros para ver outros indicados."}/></div> : result ? <>
       <div className="overflow-hidden portal-panel 2xl:hidden" aria-busy={loading}>
         <div className="grid lg:grid-cols-2">{result.items.map((item) => {
           const progress = Math.min(100, Math.round(Number(item.routes) / item.route_goal * 100));
+          const paidAmount = item.paid_amount_cents ?? item.prize_cents;
+          const statusText = item.reward_status === "paid" ? "Pago" : item.reward_status === "to_pay" ? "A pagar" : "Em progresso";
+          const statusTone = item.reward_status === "paid" ? "bg-status-success-surface text-status-success" : item.reward_status === "to_pay" ? "bg-status-warning-surface text-status-warning" : "bg-brand-soft text-brand-strong";
           return <article key={item.uuid} className="border-b border-border-subtle p-4 lg:odd:border-r lg:p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><div className="courier-name">{item.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-[#8191a2]">UUID · {item.uuid}</div></div><span className="shrink-0 rounded-full bg-brand-soft px-2.5 py-1 text-xs font-bold text-brand-strong">{item.influencer_name}</span></div>
+            <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><div className="courier-name">{item.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-muted-foreground">UUID · {item.uuid}</div></div><div className="flex flex-col items-end gap-2"><span className="rounded-full bg-brand-soft px-2.5 py-1 text-xs font-bold text-brand-strong">{item.influencer_name}</span><span className={"rounded-full px-2.5 py-1 text-xs font-bold " + statusTone}>{statusText}</span></div></div>
             <div className="mt-3 text-xs text-ink-mid">{item.region || "Região não informada"}</div>
             <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><CalendarDays size={13}/>Liberação: {fmtDate(item.released_at)}</div>
-            <div className="mt-3"><div className="flex items-center justify-between gap-3 text-xs"><span className="font-semibold tabular-nums text-ink-strong">{fmtNumber(Number(item.routes))} / {fmtNumber(item.route_goal)} corridas</span><span className="font-bold tabular-nums text-brand-strong">{progress}%</span></div><div className="route-meter h-1.5 mt-1.5" role="progressbar" aria-label={`Progresso de ${item.name || "entregador"}`} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-valuetext={`${fmtNumber(Number(item.routes))} de ${fmtNumber(item.route_goal)} corridas`}><div className="route-meter-fill" style={{ transform: `scaleX(${progress / 100})` }}/></div></div>
-            <div className="mt-3 flex items-center justify-between gap-2"><span className={`text-xs font-bold ${item.prize_unlocked ? "text-status-success" : "text-muted-foreground"}`}>{item.prize_unlocked ? "Prêmio liberado" : `Faltam ${fmtNumber(item.routes_remaining)} corridas`}</span><span className="text-xs font-bold text-ink-strong">{fmtMoney(item.prize_cents)}</span></div>
-            <details className="courier-contact mt-3 border-t border-border-subtle pt-2"><summary className="min-h-11 cursor-pointer py-2 text-xs font-bold text-brand-strong">Ver contato</summary><div className="pb-1 text-xs leading-5 text-[#536c84]">Telefone · {item.phone || "indisponível"}<br/>CPF · {item.cpf || "indisponível"}</div></details>
+            <div className="mt-3"><div className="flex items-center justify-between gap-3 text-xs"><span className="font-semibold tabular-nums text-ink-strong">{fmtNumber(Number(item.routes))} / {fmtNumber(item.route_goal)} corridas</span><span className="font-bold tabular-nums text-brand-strong">{progress}%</span></div><div className="route-meter mt-1.5 h-1.5" role="progressbar" aria-label={"Progresso de " + (item.name || "entregador")} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-valuetext={fmtNumber(Number(item.routes)) + " de " + fmtNumber(item.route_goal) + " corridas"}><div className="route-meter-fill" style={{ transform: "scaleX(" + (progress / 100) + ")" }}/></div></div>
+            <div className="mt-3 flex items-center justify-between gap-2"><span className="text-xs font-bold text-muted-foreground">{item.reward_status === "paid" ? "Pago em " + fmtDate(item.paid_at) + (item.paid_influencer_name ? " para " + item.paid_influencer_name : "") : item.reward_status === "to_pay" ? "Meta atingida · pronto para pagamento" : "Faltam " + fmtNumber(item.routes_remaining) + " corridas"}</span><span className="text-sm font-bold tabular-nums text-ink-strong">{fmtMoney(paidAmount)}</span></div>
+            <AdminReferralHistory item={item}/>
+            <details className="courier-contact mt-2 border-t border-border-subtle pt-1"><summary className="min-h-11 cursor-pointer py-2 text-xs font-bold text-brand-strong">Ver contato</summary><div className="pb-1 text-xs leading-5 text-ink-mid">Telefone · {item.phone || "indisponível"}<br/>CPF · {item.cpf || "indisponível"}</div></details>
+            <AdminReferralActions key={item.uuid + ":" + item.influencer_id} item={item} influencers={influencers} busy={pendingUuid === item.uuid} onAssign={performAssignment} onRequestConfirm={setConfirmation}/>
           </article>;
         })}</div>
       </div>
 
       <div className="hidden overflow-hidden portal-panel 2xl:block" aria-busy={loading}>
-        <div className="overflow-x-auto"><table className="w-full min-w-[920px] border-collapse text-left">
-          <thead className="bg-surface-subtle text-xs font-bold uppercase tracking-[.08em] text-[#71859b]"><tr><th className="px-4 py-3">Entregador</th><th className="px-4 py-3">Influenciador</th><th className="px-4 py-3">Corridas e progresso</th><th className="px-4 py-3">Prêmio</th></tr></thead>
-          <tbody className="divide-y divide-[#edf1f6]">{result.items.map((item) => {
+        <div className="overflow-x-auto"><table className="w-full min-w-[1320px] border-collapse text-left">
+          <thead className="bg-surface-subtle text-xs font-bold uppercase tracking-[.08em] text-muted-foreground"><tr><th className="px-4 py-3">Entregador</th><th className="px-4 py-3">Responsável</th><th className="px-4 py-3">Corridas e progresso</th><th className="px-4 py-3">Prêmio</th><th className="min-w-[290px] px-4 py-3">Ações</th></tr></thead>
+          <tbody className="divide-y divide-border-subtle">{result.items.map((item) => {
             const progress = Math.min(100, Math.round(Number(item.routes) / item.route_goal * 100));
-            return <tr key={item.uuid} className="align-top hover:bg-[#fbfcfe]"><td className="max-w-[310px] px-4 py-4"><div className="courier-name">{item.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-[#8191a2]">{item.uuid}</div><div className="mt-1 text-xs text-muted-foreground">{item.region || "Região não informada"} · Liberação: {fmtDate(item.released_at)}</div><details className="courier-contact mt-1"><summary className="min-h-11 cursor-pointer py-2 text-xs font-bold text-brand-strong">Ver contato</summary><div className="pb-1 text-xs leading-5 text-[#536c84]">Telefone · {item.phone || "indisponível"}<br/>CPF · {item.cpf || "indisponível"}</div></details></td><td className="px-4 py-4 text-sm font-semibold text-ink-mid">{item.influencer_name}</td><td className="w-[260px] px-4 py-4"><div className="flex justify-between gap-3 text-xs"><span className="font-semibold tabular-nums text-ink-strong">{fmtNumber(Number(item.routes))} / {fmtNumber(item.route_goal)}</span><span className="font-bold tabular-nums text-brand-strong">{progress}%</span></div><div className="route-meter h-1.5 mt-1.5" role="progressbar" aria-label={`Progresso de ${item.name || "entregador"}`} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-valuetext={`${fmtNumber(Number(item.routes))} de ${fmtNumber(item.route_goal)} corridas`}><div className="route-meter-fill" style={{ transform: `scaleX(${progress / 100})` }}/></div><div className="mt-1 text-xs text-muted-foreground">{item.prize_unlocked ? "Meta atingida" : `Faltam ${fmtNumber(item.routes_remaining)} corridas`}</div></td><td className="px-4 py-4"><div className="text-sm font-bold text-ink-strong">{fmtMoney(item.prize_cents)}</div><div className={`mt-1 text-xs font-semibold ${item.prize_unlocked ? "text-status-success" : "text-[#8191a2]"}`}>{item.prize_unlocked ? "Liberado" : "Em progresso"}</div></td></tr>;
+            const paidAmount = item.paid_amount_cents ?? item.prize_cents;
+            const statusText = item.reward_status === "paid" ? "Pago" : item.reward_status === "to_pay" ? "A pagar" : "Em progresso";
+            const statusTone = item.reward_status === "paid" ? "bg-status-success-surface text-status-success" : item.reward_status === "to_pay" ? "bg-status-warning-surface text-status-warning" : "bg-brand-soft text-brand-strong";
+            return <tr key={item.uuid} className="align-top hover:bg-surface-subtle/70">
+              <td className="max-w-[300px] px-4 py-4"><div className="courier-name">{item.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-muted-foreground">{item.uuid}</div><div className="mt-1 text-xs text-muted-foreground">{item.region || "Região não informada"} · Liberação: {fmtDate(item.released_at)}</div><details className="courier-contact mt-1"><summary className="min-h-11 cursor-pointer py-2 text-xs font-bold text-brand-strong">Ver contato</summary><div className="pb-1 text-xs leading-5 text-ink-mid">Telefone · {item.phone || "indisponível"}<br/>CPF · {item.cpf || "indisponível"}</div></details><AdminReferralHistory item={item}/></td>
+              <td className="px-4 py-4"><div className="text-sm font-semibold text-ink-strong">{item.influencer_name}</div><span className={"mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-bold " + statusTone}>{statusText}</span></td>
+              <td className="w-[245px] px-4 py-4"><div className="flex justify-between gap-3 text-xs"><span className="font-semibold tabular-nums text-ink-strong">{fmtNumber(Number(item.routes))} / {fmtNumber(item.route_goal)}</span><span className="font-bold tabular-nums text-brand-strong">{progress}%</span></div><div className="route-meter mt-1.5 h-1.5" role="progressbar" aria-label={"Progresso de " + (item.name || "entregador")} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-valuetext={fmtNumber(Number(item.routes)) + " de " + fmtNumber(item.route_goal) + " corridas"}><div className="route-meter-fill" style={{ transform: "scaleX(" + (progress / 100) + ")" }}/></div><div className="mt-2 text-xs text-muted-foreground">{item.reward_status === "paid" ? "Pago em " + fmtDate(item.paid_at) : item.reward_status === "to_pay" ? "Meta atingida" : "Faltam " + fmtNumber(item.routes_remaining) + " corridas"}</div></td>
+              <td className="px-4 py-4"><div className="text-sm font-bold tabular-nums text-ink-strong">{fmtMoney(paidAmount)}</div>{item.reward_status === "paid" && item.paid_influencer_name && <div className="mt-1 text-xs text-muted-foreground">Pago para {item.paid_influencer_name}</div>}</td>
+              <td className="min-w-[290px] px-4 py-4"><AdminReferralActions key={item.uuid + ":" + item.influencer_id} item={item} influencers={influencers} busy={pendingUuid === item.uuid} onAssign={performAssignment} onRequestConfirm={setConfirmation}/></td>
+            </tr>;
           })}</tbody>
         </table></div>
       </div>
-      <div className="flex flex-col justify-between gap-3 text-xs text-muted-foreground sm:flex-row sm:items-center"><span>{loading ? "Atualizando resultados… · " : ""}{fmtNumber(firstItem)}–{fmtNumber(lastItem)} de {fmtNumber(result.total)} indicados</span><div className="flex gap-2"><button type="button" onClick={() => setPage((value) => Math.max(0, value - 1))} disabled={page === 0 || loading} className="min-h-10 rounded-lg border border-input bg-white px-3 font-semibold text-[#536d70] hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50">Anterior</button><button type="button" onClick={() => setPage((value) => value + 1)} disabled={(page + 1) * pageSize >= result.total || loading} className="min-h-10 rounded-lg border border-input bg-white px-3 font-semibold text-[#536d70] hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50">Próxima</button></div></div>
+      <div className="flex flex-col justify-between gap-3 text-xs text-muted-foreground sm:flex-row sm:items-center"><span>{loading ? "Atualizando resultados… · " : ""}{fmtNumber(firstItem)}–{fmtNumber(lastItem)} de {fmtNumber(result.total)} indicados nesta guia</span><div className="flex gap-2"><button type="button" onClick={() => setPage((value) => Math.max(0, value - 1))} disabled={page === 0 || loading} className="min-h-10 rounded-lg border border-input bg-card px-3 font-semibold text-ink-mid hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50">Anterior</button><button type="button" onClick={() => setPage((value) => value + 1)} disabled={(page + 1) * pageSize >= result.total || loading} className="min-h-10 rounded-lg border border-input bg-card px-3 font-semibold text-ink-mid hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50">Próxima</button></div></div>
     </> : null}
+    <AlertDialog open={Boolean(confirmation)} onOpenChange={(open) => { if (!open && !pendingUuid) setConfirmation(null); }}>
+      <AlertDialogContent className="border-border bg-card">
+        <AlertDialogHeader>
+          <AlertDialogMedia className={confirmation?.action === "reopen" ? "bg-status-warning-surface text-status-warning" : "bg-status-success-surface text-status-success"}>{confirmation?.action === "reopen" ? <RotateCcw size={22}/> : <CheckCircle2 size={22}/>}</AlertDialogMedia>
+          <AlertDialogTitle>{confirmation?.action === "reopen" ? "Reabrir este pagamento?" : "Registrar este prêmio como pago?"}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {confirmation?.action === "reopen"
+              ? "O registro voltará para A pagar e poderá ser marcado novamente. O histórico da ação anterior será mantido."
+              : "Confirme apenas depois que o entregador receber " + fmtMoney(confirmationReferral?.prize_cents ?? 0) + ". O registro ficará em Pagos e a data será salva."}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel className="min-h-11" disabled={Boolean(pendingUuid)}>Voltar</AlertDialogCancel>
+          <AlertDialogAction onClick={() => void performPaymentAction()} disabled={Boolean(pendingUuid)} className="min-h-11">
+            {pendingUuid ? "Salvando…" : confirmation?.action === "reopen" ? "Reabrir pagamento" : "Confirmar pagamento"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>;
+}
+
+function AdminReferralActions({ item, influencers, busy, onAssign, onRequestConfirm }: {
+  item: AdminReferral; influencers: Influencer[]; busy: boolean;
+  onAssign: (uuid: string, influencerId: string | null) => void;
+  onRequestConfirm: (confirmation: { uuid: string; action: "paid" | "reopen" } | null) => void;
+}) {
+  const [destination, setDestination] = useState(item.influencer_id);
+
+  const returningToPipeline = destination === "__pipeline__";
+  const targetId = returningToPipeline ? item.pipeline_influencer_id : destination;
+  const assignmentChanged = targetId !== item.influencer_id;
+  const shouldClearOverride = returningToPipeline || targetId === item.pipeline_influencer_id;
+
+  return <div className="mt-3 space-y-2.5">
+    <label className="block text-xs font-semibold text-muted-foreground">
+      Transferir para
+      <select aria-label={"Transferir " + (item.name || "entregador")} value={destination} onChange={(event) => setDestination(event.target.value)} disabled={busy} className="mt-1.5 h-11 w-full rounded-lg border border-input bg-card px-3 text-sm font-medium text-ink-strong focus:border-ring focus:outline-none focus:ring-2 focus:ring-focus-surface disabled:opacity-60">
+        {item.assignment_overridden && <option value="__pipeline__">Atribuição Data Crazy · {item.pipeline_influencer_name}</option>}
+        {influencers.map((influencer) => <option key={influencer.id} value={influencer.id}>{influencer.name}</option>)}
+      </select>
+    </label>
+    <div className="flex flex-wrap gap-2">
+      <button type="button" onClick={() => onAssign(item.uuid, shouldClearOverride ? null : targetId)} disabled={busy || !assignmentChanged} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-input bg-card px-3 text-xs font-semibold text-ink-mid hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50"><ArrowRightLeft size={14}/>{busy ? "Salvando…" : "Transferir"}</button>
+      {item.reward_status === "to_pay" && <button type="button" onClick={() => onRequestConfirm({ uuid: item.uuid, action: "paid" })} disabled={busy} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-bold text-white hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-55"><Check size={14}/>Marcar como pago</button>}
+      {item.reward_status === "paid" && <button type="button" onClick={() => onRequestConfirm({ uuid: item.uuid, action: "reopen" })} disabled={busy} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-input bg-card px-3 text-xs font-semibold text-ink-mid hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-55"><RotateCcw size={14}/>Reabrir pagamento</button>}
+    </div>
+    {item.assignment_overridden && <p className="text-xs leading-5 text-muted-foreground">Transferência manual. A próxima sincronização manterá este responsável.</p>}
+  </div>;
+}
+
+function AdminReferralHistory({ item }: { item: AdminReferral }) {
+  if (!item.recent_events?.length) return null;
+  return <details className="mt-2 border-t border-border-subtle pt-1">
+    <summary className="min-h-10 cursor-pointer py-2 text-xs font-semibold text-brand-strong">Histórico administrativo ({item.recent_events.length})</summary>
+    <ol className="space-y-2 pb-2">
+      {item.recent_events.map((event, index) => {
+        const description = event.event_type === "assignment_changed"
+          ? "Transferência: " + (event.old_influencer_name || "sem nome") + " → " + (event.new_influencer_name || "sem nome")
+          : event.event_type === "reward_paid"
+            ? "Pagamento registrado · " + fmtMoney(event.amount_cents ?? 0)
+            : "Pagamento reaberto · " + fmtMoney(event.amount_cents ?? 0);
+        const date = new Date(event.occurred_at);
+        return <li key={event.event_type + event.occurred_at + index} className="rounded-lg bg-surface-subtle px-3 py-2 text-xs">
+          <div className="font-semibold text-ink-strong">{description}</div>
+          <div className="mt-1 text-muted-foreground">{Number.isNaN(date.getTime()) ? fmtDate(event.occurred_at) : date.toLocaleString("pt-BR")} · {event.actor_display_name || event.actor_email}</div>
+        </li>;
+      })}
+    </ol>
+  </details>;
 }

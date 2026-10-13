@@ -93,6 +93,10 @@ components:
     purpose: "Explica substituição da base antes de iniciar coleta completa."
   review-assignment:
     purpose: "Exige botão explícito para salvar atribuição selecionada."
+  referral-status-tabs:
+    purpose: "Organiza indicados entre em progresso, a pagar e pagos, com contagens que acompanham a busca e os filtros."
+  referral-management-actions:
+    purpose: "Permite transferir o responsável, registrar pagamento com confirmação e consultar o histórico administrativo."
   performance-preview:
     purpose: "Mostra até cinco linhas interpretadas antes de somar corridas ao histórico."
   workspace-load-error:

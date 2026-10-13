@@ -21,7 +21,8 @@ Os indicados são sincronizados pela API da Data Crazy manualmente ou todos os d
 ## Capabilities and Constraints
 
 - Cada influenciador vê somente os próprios indicados e respectivos dados pessoais.
-- A meta libera um prêmio por entregador, sem controle de pagamento.
+- A meta libera um prêmio por entregador. A administração registra pagamentos, pode reabri-los e transfere a responsabilidade por UUID.
+- Transferências manuais e pagamentos ficam salvos no schema do portal e permanecem após a sincronização da Data Crazy.
 - O primeiro acesso deve permitir criar senha sem exigir confirmação por e-mail.
 - O projeto usa um schema próprio em um Supabase compartilhado com outro sistema.
 - Os arquivos de exemplo servem para validar a importação e não são dados iniciais.

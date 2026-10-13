@@ -86,11 +86,28 @@ export async function callAdminApi<T>(
     });
     data = result.data; error = result.error;
   } else if (action === "admin-referrals") {
-    const result = await supabase.schema(DATA_SCHEMA).rpc("admin_referrals_page", {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("admin_referrals_page_filtered", {
+      p_reward_status: payload.rewardStatus,
       p_limit: payload.limit,
       p_offset: payload.offset,
       p_influencer_id: payload.influencerId,
       p_search: payload.search,
+    });
+    data = result.data; error = result.error;
+  } else if (action === "referral-assignment") {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("set_admin_referral_assignment", {
+      p_courier_uuid: payload.uuid,
+      p_influencer_id: payload.influencerId,
+    });
+    data = result.data; error = result.error;
+  } else if (action === "referral-mark-paid") {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("mark_admin_referral_paid", {
+      p_courier_uuid: payload.uuid,
+    });
+    data = result.data; error = result.error;
+  } else if (action === "referral-reopen-payment") {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("reopen_admin_referral_payment", {
+      p_courier_uuid: payload.uuid,
     });
     data = result.data; error = result.error;
   } else if (action === "import-start") {
