@@ -462,14 +462,13 @@ function Login({ supabase, initialError = "" }: { supabase: NonNullable<ReturnTy
   }
 
   return <main className="login-page">
-    <section className="login-context">
+    <section className="login-context" aria-label="Indique e Ganhe">
       <Brand />
       <div className="login-context-copy">
-        <h1>Suas indicações, em um só lugar.</h1>
-        <p>Consulte as corridas de cada entregador e saiba quanto falta para cada prêmio.</p>
-        <div className="login-rule" aria-hidden="true"><span/><span/><span/><span/></div>
+        <h1>Rotas em pauta</h1>
+        <p>Acompanhe indicações, corridas e prêmios da EntreGO.</p>
       </div>
-      <span className="login-footer">INDIQUE E GANHE</span>
+      <span className="login-footer">INDIQUE E GANHE · ENTREGO</span>
     </section>
     <section className="login-form-area">
       <div className="login-mobile-brand"><Brand /></div>
@@ -562,6 +561,10 @@ function InfluencerDashboard({ referrals, influencer, lastImportAt, search, setS
 function StatCard({ label, value, icon, sub, color }: { label: string; value: string; icon: React.ReactNode; sub: string; color: "teal" | "blue" | "gold" | "plum" }) {
   const colors = { teal: "bg-brand-soft text-brand-strong", blue: "bg-brand-soft text-[#5375a1]", gold: "bg-[#fff5df] text-[#b17a20]", plum: "bg-[#f4eef9] text-[#8865a3]" };
   return <div className="stat-card"><div className="flex items-start justify-between gap-3"><div className="text-xs font-semibold leading-5 text-muted-foreground">{label}</div><div className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${colors[color]}`}>{icon}</div></div><div className="metric-value mt-3 text-heading">{value}</div><div className="mt-1 text-xs text-muted-foreground">{sub}</div></div>;
+}
+
+function ReferralMetric({ label, value, icon, detail, tone }: { label: string; value: string; icon: React.ReactNode; detail: string; tone: "blue" | "green" | "amber" }) {
+  return <div className={`referral-metric tone-${tone}`}><span className="referral-metric-icon" aria-hidden="true">{icon}</span><span className="referral-metric-copy"><span className="referral-metric-label">{label}</span><strong>{value}</strong><span className="referral-metric-detail">{detail}</span></span></div>;
 }
 
 function ReferralRow({ referral }: { referral: Referral }) {
@@ -1422,33 +1425,28 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
 
   const confirmationReferral = confirmation ? result?.items.find((item) => item.uuid === confirmation.uuid) : null;
 
-  return <div className="space-y-4">
-    <section className="portal-panel p-5 sm:p-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-        <div><h2 className="text-lg font-bold tracking-[-.02em]">Indicados</h2><p className="mt-1 max-w-2xl text-sm text-muted-foreground">Acompanhe as metas, organize os pagamentos e transfira entregadores entre influenciadores.</p></div>
-        <button type="button" onClick={() => setRefreshKey((value) => value + 1)} disabled={loading} className="inline-flex min-h-11 w-fit items-center gap-2 rounded-lg border border-input bg-card px-3.5 text-sm font-semibold text-ink-mid hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc2] disabled:opacity-55"><History size={15}/>{loading ? "Atualizando…" : "Atualizar lista"}</button>
+  return <div className="admin-referral-workspace space-y-4">
+    <div role="group" aria-label="Filtrar indicados pela situação do prêmio" className="admin-status-tabs scrollbar-thin">
+      {statusTabs.map((tab) => {
+        const Icon = tab.icon;
+        const activeClasses = tab.tone === "amber" ? "is-amber" : tab.tone === "green" ? "is-green" : "is-blue";
+        return <button key={tab.id} type="button" onClick={() => changeStatus(tab.id)} aria-pressed={rewardStatus === tab.id} className={"admin-status-tab " + (rewardStatus === tab.id ? `is-active ${activeClasses}` : "")}><span className="inline-flex items-center gap-2"><Icon size={16}/>{tab.label}</span><span className="admin-status-count">{fmtNumber(tab.count)}</span></button>;
+      })}
+    </div>
+    <div className="admin-referral-stats" aria-busy={loading}>
+      <ReferralMetric label="Entregadores" value={fmtNumber(result?.total ?? 0)} icon={<Users size={18}/>} detail="com os filtros atuais" tone="blue"/>
+      <ReferralMetric label="Corridas acumuladas" value={fmtNumber(result?.totalRoutes ?? 0)} icon={<BarChart3 size={18}/>} detail="somadas por UUID" tone="blue"/>
+      <ReferralMetric label="Metas atingidas" value={fmtNumber(result?.unlockedCount ?? 0)} icon={<CheckCircle2 size={18}/>} detail="na situação selecionada" tone="green"/>
+      <ReferralMetric label="Valor dos prêmios" value={fmtMoney(result?.unlockedPrizeCents ?? 0)} icon={<Award size={18}/>} detail={rewardStatus === "paid" ? "registrado como pago" : "da situação selecionada"} tone="amber"/>
+    </div>
+    <section className="portal-panel admin-referral-filters p-4 sm:p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-base font-bold text-heading">Filtrar indicados</h2>
+        <button type="button" onClick={() => setRefreshKey((value) => value + 1)} disabled={loading} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-input bg-card px-3.5 text-sm font-semibold text-ink-mid hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc2] disabled:opacity-55"><History size={15}/>{loading ? "Atualizando…" : "Atualizar lista"}</button>
       </div>
-      <div className="mt-5">
-        <div className="mb-2 text-xs font-semibold text-muted-foreground">Situação do prêmio</div>
-        <div role="group" aria-label="Filtrar indicados pela situação do prêmio" className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          {statusTabs.map((tab) => {
-            const Icon = tab.icon;
-            const activeClasses = tab.tone === "amber" ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100"
-              : tab.tone === "green" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-100"
-                : "border-blue-300 bg-blue-50 text-blue-900 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-100";
-            return <button key={tab.id} type="button" onClick={() => changeStatus(tab.id)} aria-pressed={rewardStatus === tab.id} className={"flex min-h-12 items-center justify-between gap-3 rounded-lg border px-3.5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc6] " + (rewardStatus === tab.id ? activeClasses : "border-border bg-card text-ink-mid hover:bg-surface-subtle")}><span className="inline-flex items-center gap-2"><Icon size={16}/>{tab.label}</span><span className="min-w-8 rounded-full bg-background/70 px-2 py-0.5 text-center text-xs tabular-nums">{fmtNumber(tab.count)}</span></button>;
-          })}
-        </div>
-      </div>
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Entregadores nesta guia" value={fmtNumber(result?.total ?? 0)} icon={<Users size={17}/>} sub="com os filtros atuais" color="teal"/>
-        <StatCard label="Corridas acumuladas" value={fmtNumber(result?.totalRoutes ?? 0)} icon={<BarChart3 size={17}/>} sub="somadas por UUID" color="blue"/>
-        <StatCard label="Metas atingidas" value={fmtNumber(result?.unlockedCount ?? 0)} icon={<CheckCircle2 size={17}/>} sub="na situação selecionada" color="gold"/>
-        <StatCard label="Valor dos prêmios" value={fmtMoney(result?.unlockedPrizeCents ?? 0)} icon={<Award size={17}/>} sub={rewardStatus === "paid" ? "registrado como pago" : "da situação selecionada"} color="plum"/>
-      </div>
-      <div className="mt-4 space-y-4">
+      <div className="admin-referral-filter-tools mt-3">
         <label className="relative block text-xs font-semibold text-muted-foreground"><span className="sr-only">Buscar indicado</span><Search size={16} className="pointer-events-none absolute left-3 top-[13px] text-muted-foreground"/><input type="search" value={search} onChange={(event) => changeSearch(event.target.value)} placeholder="Buscar nome, UUID, ID do lead, telefone ou CPF" className="h-11 w-full rounded-lg border border-input bg-card pl-9 pr-3 text-sm font-medium text-ink-strong outline-none focus:border-[#2f6fc2] focus:ring-2 focus:ring-[#d7e8fa]" /></label>
-        <div>
+        <div className="min-w-0">
           <div className="mb-2 text-xs font-semibold text-muted-foreground">Influenciador</div>
           <div role="group" aria-label="Filtrar indicados por influenciador" className="scrollbar-thin flex gap-2 overflow-x-auto pb-1">
             {[{ id: "all", name: "Todos" }, ...influencers].map((item) => <button key={item.id} type="button" onClick={() => changeFilter(item.id)} aria-pressed={filterId === item.id} className={"min-h-11 shrink-0 rounded-full border px-3.5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring " + (filterId === item.id ? "border-primary bg-primary text-white" : "border-input bg-card text-ink-mid hover:bg-surface-subtle")}>{item.name}</button>)}

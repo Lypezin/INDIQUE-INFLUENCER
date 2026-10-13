@@ -103,6 +103,8 @@ Aptos, Segoe UI e Arial formam a pilha do produto. Títulos são curtos e escane
 
 No desktop, a administração tem barra lateral fixa e recolhível, dividida em Acompanhar, Fontes de dados e Administrar. A visão geral começa pelo quadro de operações e depois apresenta contexto e totais. A guia de indicados começa pelas situações Em progresso, A pagar e Pagos, seguida de métricas, busca e filtros por influenciador. Listas longas usam faixas compactas com separadores, não cartões altos repetidos.
 
+A entrada segue a mesma moldura do portal: no desktop, usa uma faixa de marca azul estreita com largura próxima à navegação lateral e um formulário centralizado no canvas claro. Em telas pequenas, a faixa vira uma marca acima do formulário; não há uma segunda metade da tela com chamada de marketing.
+
 No painel do influenciador, o progresso dos indicados aparece antes dos totais no celular. Cada faixa reúne nome, localidade, corridas acumuladas, meta, restante e prêmio. Contato, CPF e identificadores ficam em detalhes expansíveis conforme a permissão da conta. Em telas estreitas, a navegação vira menu móvel e as faixas se reorganizam sem rolagem horizontal obrigatória. Controles de decisão mantêm alvo de toque de ao menos 44 px.
 
 **Regra da primeira dobra.** A pessoa identifica seu trabalho imediato e entra na lista principal sem atravessar uma parede de métricas.
