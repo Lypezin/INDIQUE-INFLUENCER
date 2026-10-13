@@ -130,6 +130,15 @@ function savedAdminTab(email: string): TabId {
   } catch { return "dashboard"; }
 }
 
+function completedImportCursor(overview: AdminOverview): string {
+  return (["data_crazy", "performance"] as const).map((kind) => {
+    const latest = overview.imports
+      .filter((item) => item.kind === kind && item.status === "completed")
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+    return latest?.id ?? "";
+  }).join(":");
+}
+
 export default function Home() {
   const supabase = useMemo(() => getSupabase(), []);
   const [session, setSession] = useState<Session | null>(null);
@@ -138,6 +147,7 @@ export default function Home() {
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [lastImportAt, setLastImportAt] = useState<string | null>(null);
   const [overview, setOverview] = useState<AdminOverview | null>(null);
+  const [workspaceDataRevision, setWorkspaceDataRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const recoveryMode = useSyncExternalStore(subscribeRecovery, getRecoverySnapshot, getRecoveryServerSnapshot);
   const [loadError, setLoadError] = useState("");
@@ -192,6 +202,25 @@ export default function Home() {
     setProfile((current) => current?.user_id === userId ? { ...current, display_name: displayName } : current);
   }, []);
 
+  const fetchInfluencerReferrals = useCallback(async () => {
+    if (!supabase) return [] as Referral[];
+    const all: Referral[] = [];
+    for (let offset = 0; ; offset += 500) {
+      const { data, error } = await supabase.schema(DATA_SCHEMA).from("referral_progress")
+        .select("referral_id,uuid,name,region,released_at,phone,cpf,routes,route_goal,prize_cents,prize_unlocked,routes_remaining,influencer_name")
+        .order("prize_unlocked", { ascending: false }).order("routes", { ascending: false }).order("uuid")
+        .range(offset, offset + 499);
+      if (error) throw error;
+      all.push(...((data ?? []) as Referral[]).map((item) => ({
+        ...item,
+        name: repairTextEncoding(item.name),
+        region: item.region ? repairTextEncoding(item.region) : null,
+      })));
+      if (!data || data.length < 500) break;
+    }
+    return all;
+  }, [supabase]);
+
   const loadWorkspace = useCallback(async () => {
     setLoading(true);
     setLoadError("");
@@ -201,6 +230,7 @@ export default function Home() {
       if (nextProfile.role === "admin") {
         const data = await callAdminApi<AdminOverview>("admin-overview", {});
         setOverview(data);
+        setWorkspaceDataRevision(0);
         setInfluencer(null);
         setReferrals([]);
         setLastImportAt(null);
@@ -208,23 +238,7 @@ export default function Home() {
       } else {
         const [{ data: influencerData, error: influencerError }, referralData, { data: importDate, error: importDateError }] = await Promise.all([
           supabase!.schema(DATA_SCHEMA).from("influencers").select("id,name,route_goal,prize_cents,is_demo").eq("id", nextProfile.influencer_id).single(),
-          (async () => {
-            const all: Referral[] = [];
-            for (let offset = 0; ; offset += 500) {
-              const { data, error } = await supabase!.schema(DATA_SCHEMA).from("referral_progress")
-                .select("referral_id,uuid,name,region,released_at,phone,cpf,routes,route_goal,prize_cents,prize_unlocked,routes_remaining,influencer_name")
-                .order("prize_unlocked", { ascending: false }).order("routes", { ascending: false }).order("uuid")
-                .range(offset, offset + 499);
-              if (error) throw error;
-              all.push(...((data ?? []) as Referral[]).map((item) => ({
-                ...item,
-                name: repairTextEncoding(item.name),
-                region: item.region ? repairTextEncoding(item.region) : null,
-              })));
-              if (!data || data.length < 500) break;
-            }
-            return all;
-          })(),
+          fetchInfluencerReferrals(),
           supabase!.schema(DATA_SCHEMA).rpc("last_import_at"),
         ]);
         if (influencerError) throw influencerError;
@@ -240,11 +254,49 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [supabase]);
+  }, [supabase, fetchInfluencerReferrals]);
 
   const refreshAdmin = useCallback(async () => {
     setOverview(await callAdminApi<AdminOverview>("admin-overview", {}));
   }, []);
+
+  const checkForImportedData = useCallback(async () => {
+    if (!supabase || !session || !profile || document.visibilityState !== "visible") return;
+    try {
+      if (profile.role === "admin") {
+        if (!overview) return;
+        const latest = await callAdminApi<AdminOverview>("admin-overview", {});
+        if (completedImportCursor(latest) !== completedImportCursor(overview)) {
+          setOverview(latest);
+          setWorkspaceDataRevision((revision) => revision + 1);
+        }
+        return;
+      }
+
+      const { data: importedAt, error } = await supabase.schema(DATA_SCHEMA).rpc("last_import_at");
+      if (error || typeof importedAt !== "string" || importedAt === lastImportAt) return;
+      const latestReferrals = await fetchInfluencerReferrals();
+      setReferrals(latestReferrals);
+      setLastImportAt(importedAt);
+    } catch {
+      // Keep the current view usable and retry on the next interval or focus.
+    }
+  }, [supabase, session, profile, overview, lastImportAt, fetchInfluencerReferrals]);
+
+  useEffect(() => {
+    if (!session || !profile) return;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void checkForImportedData();
+    };
+    const interval = window.setInterval(refreshWhenVisible, 30_000);
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [session, profile, checkForImportedData]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -328,7 +380,7 @@ export default function Home() {
           <div className="mx-auto max-w-[1320px] px-4 pb-12 pt-7 sm:px-8 sm:pt-9 lg:px-10">
             {loadError && <div className="mb-5 flex items-start gap-3 rounded-xl border border-[#f2d8bd] bg-[#fffaf4] p-4 text-sm text-[#84572f]"><CircleAlert size={18} className="mt-0.5 shrink-0" />{loadError}</div>}
             {!isAdmin ? <InfluencerDashboard referrals={referrals} influencer={influencer} lastImportAt={lastImportAt} search={search} setSearch={setSearch} onlyUnlocked={onlyUnlocked} setOnlyUnlocked={setOnlyUnlocked} /> : (
-              <AdminDashboard activeTab={activeTab} overview={overview} profile={profile} refresh={refreshAdmin} onTab={selectTab} onAdminNameSaved={updateProfileDisplayName} />
+              <AdminDashboard activeTab={activeTab} overview={overview} profile={profile} refresh={refreshAdmin} dataVersion={workspaceDataRevision} onTab={selectTab} onAdminNameSaved={updateProfileDisplayName} />
             )}
           </div>
         </section>
@@ -503,7 +555,7 @@ function Detail({ label, value }: { label: string; value: string }) { return <di
 
 function EmptyState({ title, detail }: { title: string; detail: string }) { return <div className="grid min-h-56 place-items-center px-5 py-10 text-center"><div className="max-w-sm"><div className="mx-auto flex size-11 items-center justify-center rounded-xl bg-brand-soft text-[#245b9b]"><Users size={19}/></div><h3 className="mt-4 text-sm font-bold">{title}</h3><p className="mt-1.5 text-xs leading-5 text-muted-foreground">{detail}</p></div></div>; }
 
-function AdminDashboard({ activeTab, overview, profile, refresh, onTab, onAdminNameSaved }: { activeTab: TabId; overview: AdminOverview | null; profile: Profile; refresh: () => Promise<void>; onTab: (tab: TabId) => void; onAdminNameSaved: (userId: string, displayName: string | null) => void }) {
+function AdminDashboard({ activeTab, overview, profile, refresh, dataVersion, onTab, onAdminNameSaved }: { activeTab: TabId; overview: AdminOverview | null; profile: Profile; refresh: () => Promise<void>; dataVersion: number; onTab: (tab: TabId) => void; onAdminNameSaved: (userId: string, displayName: string | null) => void }) {
   const [refreshVersion, setRefreshVersion] = useState(0);
   const refreshPage = useCallback(async () => {
     await refresh();
@@ -513,7 +565,7 @@ function AdminDashboard({ activeTab, overview, profile, refresh, onTab, onAdminN
   return <div key={activeTab} className="admin-panel-enter">
     <div className="page-heading mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h1 className="text-[28px] font-bold tracking-[-.03em] text-heading sm:text-[34px]">{adminTabs.find((tab) => tab.id === activeTab)?.label}</h1><p className="mt-1.5 max-w-[65ch] text-sm leading-5 text-muted-foreground">{adminTabDescriptions[activeTab]}</p></div><button type="button" onClick={() => void refreshPage()} className="secondary-action inline-flex h-11 w-fit shrink-0 items-center gap-2 rounded-lg border border-input bg-white px-3.5 text-sm font-semibold text-ink-mid hover:bg-surface-subtle"><RefreshCw size={15}/>Atualizar dados</button></div>
     {activeTab === "dashboard" && <AdminHome overview={overview} onTab={onTab}/>}
-    {activeTab === "referrals" && <AdminReferralsPanel influencers={overview.influencers}/>}
+    {activeTab === "referrals" && <AdminReferralsPanel key={`${dataVersion}:${refreshVersion}`} influencers={overview.influencers}/>}
     {activeTab === "data-crazy" && <DataCrazySyncPanel overview={overview} refresh={refreshPage} refreshVersion={refreshVersion} onTab={onTab}/>}
     {activeTab === "performance" && <ImportPanel overview={overview} refresh={refresh}/>}
     {activeTab === "reviews" && <ReviewsPanel overview={overview} refresh={refresh}/>}
@@ -895,6 +947,8 @@ const importMetricLabels: Record<string, string> = {
   businessesReceived: "Negócios consultados", leadsReceived: "Leads consultados",
   businesses: "Negócios consultados", leads: "Leads consultados",
   referrals: "Indicados publicados", invalid_uuid: "Sem UUID válido",
+  changeAdded: "Novos indicados", changeUpdated: "Indicados alterados",
+  changeRemoved: "Indicados removidos",
 };
 
 const importActorLabel = (entry: { actor_display_name?: string | null; actor_email: string | null }) =>
