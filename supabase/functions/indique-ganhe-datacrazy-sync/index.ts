@@ -4,9 +4,9 @@ const DATA_SCHEMA = "indique_ganhe_influencer";
 const API_BASE = "https://api.g1.datacrazy.io/api/v1";
 const PAGE_SIZE = 300;
 const MAX_PAGES_PER_INVOCATION = 24;
-// 1.1s keeps this worker below the documented 60 requests/minute/route,
-// leaving room for the preflight request and small timing variations.
-const MIN_ROUTE_INTERVAL_MS = 1_100;
+// One request per second reaches the documented ceiling of 60 requests per
+// minute per route. Retry-After and rate-limit response headers still pause it.
+const MIN_ROUTE_INTERVAL_MS = 1_000;
 const MAX_BODY_BYTES = 4_096;
 const FIRST_SYNC_MONTH = "2026-01-01";
 const BEFORE_FIRST_SYNC_MONTH = new Date(Date.parse(`${FIRST_SYNC_MONTH}T00:00:00.000Z`) - 1).toISOString();
@@ -191,32 +191,6 @@ function normalized(value: unknown): string {
     .toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-function indicationMatch(value: string): { status: "matched" | "ignored" | "unknown" | "empty"; influencerId: string | null } {
-  const normalizedValue = normalized(value);
-  if (!normalizedValue) return { status: "empty", influencerId: null };
-  const phrase = repairEncoding(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-  if (/(^| )(caio|marreta)( |$)/.test(phrase)) {
-    return { status: "ignored", influencerId: null };
-  }
-  const aliases: Array<[string[], string]> = [
-    [["jaiminho"], "jaiminho"],
-    [["jhowjhow", "jhowhow", "jhow"], "jhowjhow"],
-    [["00broc", "0broc", "brocador"], "00-brocador"],
-    [["felipe"], "felipe"],
-    [["sassa", "sasa"], "sassa"],
-    [["guilherme"], "gui"],
-    [["vini"], "vini"],
-    [["thais"], "thais"],
-    [["biel"], "biel"],
-  ];
-  for (const [names, influencerId] of aliases) {
-    if (names.some((name) => normalizedValue.includes(name))) return { status: "matched", influencerId };
-  }
-  if (phrase.split(" ").includes("gui")) return { status: "matched", influencerId: "gui" };
-  return { status: "unknown", influencerId: null };
-}
-
 function canonicalUuid(value: unknown): string | null {
   const cleaned = text(value).replace(/^\{|\}$/g, "").toLowerCase();
   return UUID.test(cleaned) ? cleaned : null;
@@ -298,9 +272,9 @@ function businessRow(value: unknown): JsonObject | null {
   const stage = object(business.stage);
   const pipeline = object(stage?.pipeline) ?? object(business.pipeline);
   const pipelineId = text(pipeline?.id ?? stage?.pipelineId ?? business.pipelineId).toLowerCase();
-  const influencerId = PIPELINES[pipelineId]?.influencerId ?? null;
+  const influencerId = PIPELINES[pipelineId]?.influencerId;
   const pipelineName = text(pipeline?.name ?? stage?.pipelineName ?? business.pipelineName);
-  return businessId && leadId ? { businessId, leadId, influencerId, pipelineName } : null;
+  return businessId && leadId && influencerId ? { businessId, leadId, influencerId, pipelineName } : null;
 }
 
 function leadRow(value: unknown): JsonObject | null {
@@ -310,10 +284,6 @@ function leadRow(value: unknown): JsonObject | null {
   const fields = extraFields(lead);
   const uuid = canonicalUuid(extraValue(fields.get("iddoentregador")));
   if (!leadId || !uuid) return null;
-  const indicationField = [...fields.entries()].find(([key]) =>
-    key.startsWith("indicacao") || key.startsWith("indicacoes") || key === "indica")?.[1];
-  const indicationRaw = repairEncoding(fieldText(extraValue(indicationField))).slice(0, 500);
-  const indication = indicationMatch(indicationRaw);
   const region = fieldText(extraValue(fields.get("regioes"))) || fieldText(object(lead.address)?.city);
   const releasedAt = dateOnly(extraValue(fields.get("liberadodia")));
   const number = phone(lead.rawPhone ?? lead.phone);
@@ -326,9 +296,9 @@ function leadRow(value: unknown): JsonObject | null {
     phone: number.value,
     cpf: cpf(lead.taxId),
     phoneUnavailable: number.unavailable,
-    indicationRaw,
-    indicationInfluencerId: indication.influencerId,
-    indicationStatus: indication.status,
+    indicationRaw: "",
+    indicationInfluencerId: null,
+    indicationStatus: "empty",
   };
 }
 

@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent, type FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
-  Activity, ArrowDownUp, ArrowRight, Award, BarChart3, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
+  ArrowDownUp, ArrowRight, Award, BarChart3, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   CircleAlert, ClipboardList, CloudUpload, Download, Eye, EyeOff, FileSpreadsheet,
   CalendarDays, Gift, History, LoaderCircle, LogOut, Mail, MapPin, Menu, Moon, RefreshCw, Search, ShieldCheck, Sun, UserRound, Users, XCircle,
 } from "lucide-react";
@@ -48,12 +48,6 @@ type ImportHistorySummary = { total: number; staging: number; completed: number;
 type ImportHistoryResult = { items: ImportHistoryEntry[]; total: number; summary: ImportHistorySummary };
 type ImportEvent = { id: number; event_type: string; message: string; details: Record<string, unknown>; created_at: string; actor_email: string | null; actor_display_name?: string | null };
 type ImportActivityEntry = ImportEvent & { batch_id: string; kind: "data_crazy" | "performance"; source: "api" | "file" | null; file_name: string };
-type DataCrazyChange = {
-  id: number; batch_id: string; uuid: string; change_type: "added" | "updated" | "removed";
-  changed_fields: string[]; previous_influencer_name: string | null; new_influencer_name: string | null;
-  actor_display_name: string; actor_email: string | null; created_at: string;
-};
-type DataCrazyChangesResult = { items: DataCrazyChange[]; total: number };
 type DataCrazySyncRun = {
   id: string; status: "running" | "completed" | "failed"; phase: string;
   processed: number; total: number; metrics: Record<string, number>;
@@ -67,7 +61,7 @@ type PerformanceCoverageCity = { city: string; firstDate: string | null; lastDat
 type PerformanceCoverage = { firstDate: string | null; lastDate: string | null; rowCount: number; importCount: number; uncapturedImportCount: number; cities: PerformanceCoverageCity[] };
 type AdminReferral = { uuid: string; name: string; region: string | null; released_at: string | null; phone: string | null; cpf: string | null; influencer_id: string; influencer_name: string; routes: number; route_goal: number; prize_cents: number; prize_unlocked: boolean; routes_remaining: number };
 type AdminReferralsResult = { items: AdminReferral[]; total: number; totalRoutes: number; unlockedCount: number; unlockedPrizeCents: number };
-type TabId = "dashboard" | "referrals" | "data-crazy" | "tracking" | "performance" | "reviews" | "accounts" | "profile" | "imports";
+type TabId = "dashboard" | "referrals" | "data-crazy" | "performance" | "reviews" | "accounts" | "profile" | "imports";
 type Theme = "light" | "dark";
 
 const fmtMoney = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
@@ -97,7 +91,6 @@ const adminTabs: { id: TabId; label: string; icon: typeof BarChart3 }[] = [
   { id: "dashboard", label: "Visão geral", icon: BarChart3 },
   { id: "referrals", label: "Indicados", icon: Users },
   { id: "data-crazy", label: "Data Crazy", icon: FileSpreadsheet },
-  { id: "tracking", label: "Rastreio", icon: Activity },
   { id: "performance", label: "Performance", icon: ArrowDownUp },
   { id: "reviews", label: "Revisões", icon: ClipboardList },
   { id: "imports", label: "Importações", icon: History },
@@ -109,7 +102,6 @@ const adminTabDescriptions: Record<TabId, string> = {
   dashboard: "Acompanhe a base, as corridas e o que precisa de atenção.",
   referrals: "Entregadores atribuídos, metas e prêmios em um só lugar.",
   "data-crazy": "Base de entregadores, corridas e movimentações registradas.",
-  tracking: "Analise as fontes de atribuição e acompanhe o histórico da API.",
   performance: "Some novas corridas ao histórico e acompanhe a cobertura dos dados.",
   reviews: "Resolva entregadores sem atribuição clara.",
   imports: "Consulte cargas, etapas e responsáveis.",
@@ -510,7 +502,6 @@ function AdminDashboard({ activeTab, overview, profile, refresh, onTab, onAdminN
     {activeTab === "dashboard" && <AdminHome overview={overview} onTab={onTab}/>}
     {activeTab === "referrals" && <AdminReferralsPanel influencers={overview.influencers}/>}
     {activeTab === "data-crazy" && <DataCrazySyncPanel overview={overview} refresh={refreshPage} refreshVersion={refreshVersion} onTab={onTab}/>}
-    {activeTab === "tracking" && <DataCrazyTrackingPanel onTab={onTab}/>}
     {activeTab === "performance" && <ImportPanel overview={overview} refresh={refresh}/>}
     {activeTab === "reviews" && <ReviewsPanel overview={overview} refresh={refresh}/>}
     {activeTab === "accounts" && <AccountsPanel overview={overview} refresh={refresh} onAdminNameSaved={onAdminNameSaved}/>}
@@ -609,6 +600,7 @@ function DataCrazySyncPanel({ overview, refresh, refreshVersion, onTab }: { over
   const dataCrazyUpdatedAt = run?.status === "completed" && run.completedAt ? run.completedAt : latestDataCrazy?.created_at ?? null;
   const reviewCount = overview.reviewCount ?? overview.reviews.length;
   const runMetrics = Object.entries(run?.metrics ?? {}).filter(([key]) =>
+    !key.startsWith("indication") && key !== "pipelineFallback" &&
     !(key === "businessesReceived" && typeof run?.metrics.businesses === "number") &&
     !(key === "leadsReceived" && typeof run?.metrics.leads === "number"),
   );
@@ -676,137 +668,10 @@ function DataCrazySyncPanel({ overview, refresh, refreshVersion, onTab }: { over
           <div><dt>Corridas importadas</dt><dd>{fmtNumber(overview.contributionTotal)}</dd></div>
           <div><dt>UUIDs para revisar</dt><dd>{fmtNumber(reviewCount)}</dd></div>
         </dl>
-        <div className="dc-crossmatch-note"><History size={16}/><p>Esta API não documenta eventos instantâneos de alteração. O histórico de sincronizações e a análise entre pipeline e indicação ficam na guia Rastreio.</p></div>
-        <button type="button" onClick={() => onTab("tracking")} className="dc-panel-link">Abrir rastreio e análise <ArrowRight size={15}/></button>
+        <div className="dc-crossmatch-note"><History size={16}/><p>A atribuição dos indicados é definida exclusivamente pela pipeline do negócio.</p></div>
         <button type="button" onClick={() => onTab("referrals")} className="dc-panel-link">Consultar entregadores <ArrowRight size={15}/></button>
       </aside>
     </div>
-  </div>;
-}
-
-function DataCrazyTrackingPanel({ onTab }: { onTab: (tab: TabId) => void }) {
-  const supabase = useMemo(() => getSupabase(), []);
-  const [history, setHistory] = useState<ImportHistoryResult | null>(null);
-  const [changes, setChanges] = useState<DataCrazyChangesResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [historyError, setHistoryError] = useState("");
-  const [changesError, setChangesError] = useState("");
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [changeFilter, setChangeFilter] = useState<"all" | DataCrazyChange["change_type"]>("all");
-
-  useEffect(() => {
-    let current = true;
-    const load = async () => {
-      const [historyResult, changesResult] = await Promise.allSettled([
-        callAdminApi<ImportHistoryResult>("import-history", {
-          limit: 40, offset: 0, status: "all", kind: "data_crazy",
-        }),
-        (async () => {
-          if (!supabase) throw new Error("A conexão com o banco não está disponível.");
-          const { data, error } = await supabase.schema(DATA_SCHEMA).rpc("list_recent_data_crazy_changes", {
-            p_limit: 25, p_offset: 0,
-          });
-          if (error) throw error;
-          return data as DataCrazyChangesResult;
-        })(),
-      ]);
-      if (!current) return;
-      if (historyResult.status === "fulfilled") { setHistory(historyResult.value); setHistoryError(""); }
-      else setHistoryError(historyResult.reason instanceof Error ? historyResult.reason.message : "Não foi possível carregar o histórico de sincronizações.");
-      if (changesResult.status === "fulfilled") {
-        setChanges((existing) => {
-          const latestChanges = changesResult.value;
-          if (!existing || existing.items.length <= 25) return latestChanges;
-          const latestIds = new Set(latestChanges.items.map((item) => item.id));
-          return { ...latestChanges, items: [...latestChanges.items, ...existing.items.filter((item) => !latestIds.has(item.id))] };
-        });
-        setChangesError("");
-      } else setChangesError(changesResult.reason instanceof Error ? changesResult.reason.message : "Não foi possível carregar o histórico de alterações.");
-      setLoading(false);
-    };
-    void load();
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load();
-    }, 20_000);
-    return () => { current = false; window.clearInterval(timer); };
-  }, [refreshKey, supabase]);
-
-  async function loadMoreChanges() {
-    if (!supabase || !changes || loadingMore) return;
-    setLoadingMore(true);
-    try {
-      const { data, error } = await supabase.schema(DATA_SCHEMA).rpc("list_recent_data_crazy_changes", {
-        p_limit: 25, p_offset: changes.items.length,
-      });
-      if (error) throw error;
-      const next = data as DataCrazyChangesResult;
-      setChanges((current) => current ? { ...next, items: [...current.items, ...next.items] } : next);
-    } catch (cause) {
-      setChangesError(cause instanceof Error ? cause.message : "Não foi possível carregar mais alterações.");
-    } finally { setLoadingMore(false); }
-  }
-
-  const items = history?.items ?? [];
-  const currentRun = items.find((item) => item.status === "staging") ?? null;
-  const latest = items.find((item) => item.status === "completed") ?? null;
-  const metrics = latest?.metrics ?? {};
-  const metricCards = [
-    { key: "indicationAgreed", label: "Pipeline e indicação concordam", tone: "text-status-success" },
-    { key: "pipelineFallback", label: "Atribuídos só pela pipeline", tone: "text-brand-strong" },
-    { key: "indicationConflicts", label: "Divergências para revisar", tone: "text-status-warning" },
-    { key: "indicationUnknown", label: "Indicações não reconhecidas", tone: "text-status-danger" },
-  ];
-  const visibleChanges = (changes?.items ?? []).filter((item) => changeFilter === "all" || item.change_type === changeFilter);
-  const changeTypeLabels: Record<DataCrazyChange["change_type"], string> = {
-    added: "Novo indicado", updated: "Dados alterados", removed: "Saiu da lista",
-  };
-  const changedFieldLabels: Record<string, string> = {
-    record: "cadastro", name: "nome", region: "região", released_at: "data de liberação",
-    phone: "telefone", cpf: "CPF", influencer: "influenciador", attribution: "origem da atribuição",
-  };
-
-  return <div className="space-y-5">
-    <section className="portal-panel p-5 sm:p-6" aria-labelledby="tracking-heading">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-        <div className="max-w-3xl"><h2 id="tracking-heading" className="text-lg font-bold text-heading">Atribuição e rastreio da Data Crazy</h2><p className="mt-1.5 text-sm leading-5 text-muted-foreground">Compare a pipeline do negócio com o campo “Indicação” do lead. Quando os sinais divergem, o UUID fica separado para revisão administrativa.</p></div>
-        <div className="flex shrink-0 flex-wrap gap-2">
-          <button type="button" onClick={() => onTab("data-crazy")} className="inline-flex h-11 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-bold text-white hover:bg-primary-hover"><RefreshCw size={15}/>Abrir sincronização</button>
-          <button type="button" onClick={() => { setLoading(true); setRefreshKey((value) => value + 1); }} disabled={loading} className="inline-flex h-11 items-center gap-2 rounded-lg border border-input bg-card px-3.5 text-sm font-semibold text-ink-mid hover:bg-surface-subtle disabled:opacity-55"><History size={15}/>{loading ? "Atualizando…" : "Atualizar log"}</button>
-        </div>
-      </div>
-      <div className="mt-5 flex flex-col gap-3 rounded-xl bg-surface-subtle px-4 py-3.5 text-sm sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-start gap-2.5"><Activity size={17} className="mt-0.5 shrink-0 text-brand-strong"/><p className="leading-5 text-ink-mid"><strong className="text-ink-strong">Atualização da origem:</strong> a API consultada não documenta eventos instantâneos de alteração. A base do portal é publicada após uma sincronização completa, manualmente ou na rotina diária das 06:00.</p></div>
-        <span className="shrink-0 text-xs font-semibold text-muted-foreground">Histórico atualiza a cada 20 s</span>
-      </div>
-    </section>
-
-    {historyError && <p role="alert" className="rounded-xl bg-status-danger-surface px-4 py-3 text-sm text-status-danger">{historyError}</p>}
-    {changesError && <p role="alert" className="rounded-xl bg-status-danger-surface px-4 py-3 text-sm text-status-danger">{changesError}</p>}
-    {currentRun && <section className="portal-panel flex flex-wrap items-center justify-between gap-3 px-4 py-3.5" aria-live="polite"><div className="flex items-center gap-2.5"><LoaderCircle size={17} className="animate-spin text-brand-strong"/><div><strong className="text-sm text-heading">Sincronização em andamento</strong><p className="mt-0.5 text-xs text-muted-foreground">Iniciada {formatImportTime(currentRun.created_at)} por {importActorLabel(currentRun)}</p></div></div><span className="rounded-full bg-status-warning-surface px-2.5 py-1.5 text-xs font-bold text-status-warning">Atualizando</span></section>}
-
-    <section className="portal-panel p-5 sm:p-6" aria-labelledby="attribution-analysis-title">
-      <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="attribution-analysis-title" className="text-base font-bold text-heading">Análise da última coleta concluída</h2><p className="mt-1 text-sm text-muted-foreground">{latest ? `Finalizada ${formatImportTime(latest.completed_at)}` : "Os indicadores aparecerão após a primeira coleta válida."}</p></div>{latest && <span className="text-xs font-semibold text-muted-foreground">{fmtNumber(latest.metrics.referrals ?? 0)} UUIDs encontrados</span>}</div>
-      {loading && !history ? <div className="mt-5 flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle size={16} className="animate-spin"/>Carregando dados de rastreio…</div> : latest ? <div className="mt-5 grid grid-cols-1 divide-y divide-border-subtle overflow-hidden rounded-xl border border-border-subtle sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
-        {metricCards.map((card) => <div key={card.key} className="px-4 py-4"><div className="text-xs font-semibold text-muted-foreground">{card.label}</div><div className={`mt-1.5 text-2xl font-bold tabular-nums ${card.tone}`}>{fmtNumber(metrics[card.key] ?? 0)}</div></div>)}
-      </div> : !historyError ? <div className="mt-5 rounded-lg bg-surface-subtle px-4 py-5 text-sm text-muted-foreground">Ainda não existe uma sincronização concluída para analisar.</div> : null}
-      {latest && <><div className="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-4"><div className="rounded-lg bg-surface-subtle px-3 py-2.5">Campo “Indicação” preenchido: <strong className="text-ink-strong">{fmtNumber(metrics.indicationTotal ?? 0)}</strong></div><div className="rounded-lg bg-surface-subtle px-3 py-2.5">Valores reconhecidos: <strong className="text-ink-strong">{fmtNumber(metrics.indicationMatched ?? 0)}</strong></div><div className="rounded-lg bg-surface-subtle px-3 py-2.5">Valores ignorados: <strong className="text-ink-strong">{fmtNumber(metrics.indicationIgnored ?? 0)}</strong></div><div className="rounded-lg bg-surface-subtle px-3 py-2.5">Leads sem UUID válido: <strong className="text-ink-strong">{fmtNumber(metrics.invalid_uuid ?? 0)}</strong></div></div><div className="mt-2 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3"><div className="rounded-lg bg-surface-subtle px-3 py-2.5">Novos: <strong className="text-ink-strong">{fmtNumber(metrics.changeAdded ?? 0)}</strong></div><div className="rounded-lg bg-surface-subtle px-3 py-2.5">Alterados: <strong className="text-ink-strong">{fmtNumber(metrics.changeUpdated ?? 0)}</strong></div><div className="rounded-lg bg-surface-subtle px-3 py-2.5">Removidos: <strong className="text-ink-strong">{fmtNumber(metrics.changeRemoved ?? 0)}</strong></div></div></>}
-    </section>
-
-    <section className="portal-panel overflow-hidden" aria-labelledby="tracking-history-title">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle px-5 py-4 sm:px-6"><div><h2 id="tracking-history-title" className="text-base font-bold text-heading">Histórico de sincronizações</h2><p className="mt-1 text-sm text-muted-foreground">Execuções manuais e automáticas, com responsável, horário e resultado.</p></div><button type="button" onClick={() => onTab("imports")} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-2.5 text-sm font-bold text-brand-strong hover:bg-brand-soft">Log completo <ArrowRight size={15}/></button></div>
-      {loading && !history ? <div className="px-5 py-10 text-center text-sm text-muted-foreground"><LoaderCircle className="mx-auto mb-2 animate-spin" size={18}/>Carregando histórico…</div> : items.length === 0 ? <div className="px-5 py-8 text-sm text-muted-foreground">Nenhuma sincronização registrada.</div> : <div className="divide-y divide-border-subtle">{items.slice(0, 12).map((item) => <article key={item.id} className="flex flex-col gap-2 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-6"><div className="min-w-0"><div className="truncate text-sm font-semibold text-ink-strong">{item.file_name}</div><div className="mt-1 text-xs text-muted-foreground">{formatImportTime(item.created_at)} · {importActorLabel(item)} · {fmtNumber(item.metrics.referrals ?? item.staged_rows)} registros</div></div><span className={`inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-bold ${item.status === "completed" ? "bg-status-success-surface text-status-success" : item.status === "staging" ? "bg-status-warning-surface text-status-warning" : "bg-status-danger-surface text-status-danger"}`}>{item.status === "completed" ? <CheckCircle2 size={13}/> : item.status === "staging" ? <LoaderCircle size={13} className="animate-spin"/> : <CircleAlert size={13}/>} {historyStatusLabels[item.status]}</span></article>)}</div>}
-    </section>
-
-    <section className="portal-panel overflow-hidden" aria-labelledby="record-change-history-title">
-      <div className="flex flex-col justify-between gap-3 border-b border-border-subtle px-5 py-4 sm:flex-row sm:items-center sm:px-6"><div><h2 id="record-change-history-title" className="text-base font-bold text-heading">Histórico de alterações por entregador</h2><p className="mt-1 text-sm text-muted-foreground">A partir da próxima coleta, registra entradas, remoções e campos modificados, sem guardar valores pessoais anteriores.</p></div><label className="flex flex-col gap-1 text-xs font-semibold text-muted-foreground">Tipo de alteração<select value={changeFilter} onChange={(event) => setChangeFilter(event.target.value as typeof changeFilter)} className="h-10 rounded-lg border border-input bg-card px-3 text-sm font-medium text-ink-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"><option value="all">Todas</option><option value="added">Novos indicados</option><option value="updated">Dados alterados</option><option value="removed">Removidos</option></select></label></div>
-      {loading && !changes ? <div className="px-5 py-10 text-center text-sm text-muted-foreground"><LoaderCircle className="mx-auto mb-2 animate-spin" size={18}/>Carregando alterações…</div> : visibleChanges.length === 0 ? <div className="px-5 py-8 text-sm text-muted-foreground">{changes?.total ? "Nenhuma alteração deste tipo nesta página." : "Nenhuma alteração registrada entre sincronizações ainda."}</div> : <div className="divide-y divide-border-subtle">{visibleChanges.map((item) => {
-        const pill = item.change_type === "added" ? "bg-status-success-surface text-status-success" : item.change_type === "removed" ? "bg-status-danger-surface text-status-danger" : "bg-status-warning-surface text-status-warning";
-        const attributionChanged = item.changed_fields.includes("influencer") || item.changed_fields.includes("attribution") || item.change_type !== "updated";
-        return <article key={item.id} className="flex flex-col gap-2.5 px-5 py-4 sm:px-6"><div className="flex flex-wrap items-center justify-between gap-2"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-bold ${pill}`}>{item.change_type === "added" ? <CheckCircle2 size={13}/> : item.change_type === "removed" ? <CircleAlert size={13}/> : <RefreshCw size={13}/>} {changeTypeLabels[item.change_type]}</span><span className="text-xs text-muted-foreground">{formatImportTime(item.created_at)} · {item.actor_display_name || item.actor_email || "Sistema"}</span></div><div className="break-all font-mono text-xs text-ink-mid">UUID · {item.uuid}</div>{item.change_type === "updated" && <div className="flex flex-wrap gap-1.5">{item.changed_fields.map((field) => <span key={field} className="rounded-md bg-surface-subtle px-2 py-1 text-xs text-ink-mid">{changedFieldLabels[field] ?? field}</span>)}</div>}{attributionChanged && <div className="text-xs text-muted-foreground">Influenciador: <strong className="text-ink-strong">{item.previous_influencer_name || (item.change_type === "added" ? "Novo vínculo" : "Sem atribuição")}</strong> <ArrowRight size={12} className="mx-1 inline" aria-hidden="true"/> <strong className="text-ink-strong">{item.new_influencer_name || (item.change_type === "removed" ? "Removido" : "Para revisão")}</strong></div>}</article>;
-      })}</div>}
-      {changes && changes.items.length < changes.total && <div className="border-t border-border-subtle px-5 py-3 text-center sm:px-6"><button type="button" onClick={() => void loadMoreChanges()} disabled={loadingMore} className="inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-bold text-brand-strong hover:bg-brand-soft disabled:opacity-55">{loadingMore && <LoaderCircle size={14} className="animate-spin"/>}{loadingMore ? "Carregando…" : `Carregar mais alterações (${fmtNumber(changes.total - changes.items.length)} restantes)`}</button></div>}
-    </section>
   </div>;
 }
 
@@ -1017,10 +882,6 @@ const importMetricLabels: Record<string, string> = {
   businessesReceived: "Negócios consultados", leadsReceived: "Leads consultados",
   businesses: "Negócios consultados", leads: "Leads consultados",
   referrals: "Indicados publicados", invalid_uuid: "Sem UUID válido",
-  indicationTotal: "Indicação preenchida", indicationMatched: "Valor de indicação reconhecido",
-  indicationAgreed: "Pipeline e indicação concordaram",
-  pipelineFallback: "Atribuídos só pela pipeline", indicationConflicts: "Divergências para revisar",
-  indicationUnknown: "Indicação não reconhecida", indicationIgnored: "Indicação ignorada",
 };
 
 const importActorLabel = (entry: { actor_display_name?: string | null; actor_email: string | null }) =>
