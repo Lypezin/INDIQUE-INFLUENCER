@@ -167,6 +167,17 @@ function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function repairEncoding(value: string): string {
+  if (!/[ÃÂ]/.test(value)) return value;
+  try {
+    const bytes = Uint8Array.from([...value], (character) => character.charCodeAt(0) & 0xff);
+    const repaired = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return repaired.includes("\uFFFD") ? value : repaired;
+  } catch {
+    return value;
+  }
+}
+
 function fieldText(value: unknown): string {
   if (typeof value === "string" || typeof value === "number") return String(value).trim();
   if (Array.isArray(value)) return value.map(fieldText).filter(Boolean).join(", ");
@@ -176,8 +187,34 @@ function fieldText(value: unknown): string {
 }
 
 function normalized(value: unknown): string {
-  return text(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  return repairEncoding(text(value)).normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function indicationMatch(value: string): { status: "matched" | "ignored" | "unknown" | "empty"; influencerId: string | null } {
+  const normalizedValue = normalized(value);
+  if (!normalizedValue) return { status: "empty", influencerId: null };
+  const phrase = repairEncoding(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  if (/(^| )(caio|marreta)( |$)/.test(phrase)) {
+    return { status: "ignored", influencerId: null };
+  }
+  const aliases: Array<[string[], string]> = [
+    [["jaiminho"], "jaiminho"],
+    [["jhowjhow", "jhowhow", "jhow"], "jhowjhow"],
+    [["00broc", "0broc", "brocador"], "00-brocador"],
+    [["felipe"], "felipe"],
+    [["sassa", "sasa"], "sassa"],
+    [["guilherme"], "gui"],
+    [["vini"], "vini"],
+    [["thais"], "thais"],
+    [["biel"], "biel"],
+  ];
+  for (const [names, influencerId] of aliases) {
+    if (names.some((name) => normalizedValue.includes(name))) return { status: "matched", influencerId };
+  }
+  if (phrase.split(" ").includes("gui")) return { status: "matched", influencerId: "gui" };
+  return { status: "unknown", influencerId: null };
 }
 
 function canonicalUuid(value: unknown): string | null {
@@ -229,8 +266,15 @@ function phone(value: unknown): { value: string | null; unavailable: boolean } {
 function extraFields(lead: JsonObject): Map<string, JsonObject> {
   const fields = new Map<string, JsonObject>();
   const source = lead.additionalFields;
-  if (!Array.isArray(source)) return fields;
-  for (const item of source) {
+  const entries = Array.isArray(source)
+    ? source
+    : object(source)
+    ? Object.entries(object(source)!).map(([name, value]) => {
+      const field = object(value);
+      return field ? { name: field.name ?? name, ...field } : { name, value };
+    })
+    : [];
+  for (const item of entries) {
     const field = object(item);
     if (!field) continue;
     const name = normalized(object(field.additionalField)?.name ?? field.name);
@@ -254,8 +298,9 @@ function businessRow(value: unknown): JsonObject | null {
   const stage = object(business.stage);
   const pipeline = object(stage?.pipeline) ?? object(business.pipeline);
   const pipelineId = text(pipeline?.id ?? stage?.pipelineId ?? business.pipelineId).toLowerCase();
-  const influencerId = PIPELINES[pipelineId]?.influencerId;
-  return businessId && leadId && influencerId ? { businessId, leadId, influencerId } : null;
+  const influencerId = PIPELINES[pipelineId]?.influencerId ?? null;
+  const pipelineName = text(pipeline?.name ?? stage?.pipelineName ?? business.pipelineName);
+  return businessId && leadId ? { businessId, leadId, influencerId, pipelineName } : null;
 }
 
 function leadRow(value: unknown): JsonObject | null {
@@ -265,6 +310,10 @@ function leadRow(value: unknown): JsonObject | null {
   const fields = extraFields(lead);
   const uuid = canonicalUuid(extraValue(fields.get("iddoentregador")));
   if (!leadId || !uuid) return null;
+  const indicationField = [...fields.entries()].find(([key]) =>
+    key.startsWith("indicacao") || key.startsWith("indicacoes") || key === "indica")?.[1];
+  const indicationRaw = repairEncoding(fieldText(extraValue(indicationField))).slice(0, 500);
+  const indication = indicationMatch(indicationRaw);
   const region = fieldText(extraValue(fields.get("regioes"))) || fieldText(object(lead.address)?.city);
   const releasedAt = dateOnly(extraValue(fields.get("liberadodia")));
   const number = phone(lead.rawPhone ?? lead.phone);
@@ -277,6 +326,9 @@ function leadRow(value: unknown): JsonObject | null {
     phone: number.value,
     cpf: cpf(lead.taxId),
     phoneUnavailable: number.unavailable,
+    indicationRaw,
+    indicationInfluencerId: indication.influencerId,
+    indicationStatus: indication.status,
   };
 }
 
