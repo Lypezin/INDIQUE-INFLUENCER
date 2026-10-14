@@ -1,5 +1,6 @@
 @import "tailwindcss/index.css";
 @import "tw-animate-css";
+@import "./referrals.css";
 @import "../vendor/shadcn-tailwind-4.13.0.css";
 
 @utility scrollbar-thin { scrollbar-width: thin; }
@@ -747,74 +748,6 @@ html[data-theme="dark"] .login-context { background: #102c4c; }
   .login-form-card { width: min(100%, 29rem); }
 }
 
-.admin-status-tabs {
-  display: flex;
-  min-width: 0;
-  gap: .4rem;
-  overflow-x: auto;
-  border-bottom: 1px solid var(--border);
-  padding: 0 .15rem;
-}
-.admin-status-tab {
-  position: relative;
-  display: inline-flex;
-  min-height: 3.1rem;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1.25rem;
-  border: 1px solid transparent;
-  border-bottom-color: transparent;
-  border-radius: .6rem .6rem 0 0;
-  margin-bottom: -1px;
-  padding: .55rem .95rem;
-  background: transparent;
-  color: var(--ink-mid);
-  font-size: .875rem;
-  font-weight: 680;
-  white-space: nowrap;
-}
-.admin-status-tab:hover { background: var(--surface-subtle); color: var(--heading); }
-.admin-status-tab.is-active { border-color: var(--border); border-bottom-color: var(--card); background: var(--card); }
-.admin-status-tab.is-active.is-blue { background: var(--brand-soft); color: var(--brand-strong); }
-.admin-status-tab.is-active.is-amber { background: var(--status-warning-surface); color: var(--status-warning); }
-.admin-status-tab.is-active.is-green { background: var(--status-success-surface); color: var(--status-success); }
-.admin-status-count { display: inline-grid; min-width: 1.75rem; min-height: 1.4rem; place-items: center; border-radius: .45rem; padding: .1rem .4rem; background: var(--surface-subtle); color: var(--ink-mid); font-size: .72rem; font-variant-numeric: tabular-nums; }
-.admin-status-tab.is-active .admin-status-count { background: var(--brand-soft); color: var(--brand-strong); }
-.admin-referral-stats {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: .7rem;
-  background: var(--border);
-}
-.referral-metric { display: flex; min-width: 0; min-height: 5.75rem; align-items: center; gap: .75rem; padding: .85rem .8rem; background: var(--card); }
-.referral-metric-icon { display: grid; width: 2.35rem; height: 2.35rem; flex: 0 0 auto; place-items: center; border-radius: .6rem; background: var(--brand-soft); color: var(--brand-strong); }
-.referral-metric.tone-green .referral-metric-icon { background: var(--status-success-surface); color: var(--status-success); }
-.referral-metric.tone-amber .referral-metric-icon { background: var(--status-warning-surface); color: var(--status-warning); }
-.referral-metric-copy { display: grid; min-width: 0; gap: .1rem; }
-.referral-metric-label { color: var(--muted-foreground); font-size: .75rem; font-weight: 650; line-height: 1.3; }
-.referral-metric-copy strong { overflow: hidden; color: var(--heading); font-size: 1.125rem; font-weight: 760; font-variant-numeric: tabular-nums; letter-spacing: -.025em; text-overflow: ellipsis; white-space: nowrap; }
-.referral-metric-detail { color: var(--muted-foreground); font-size: .6875rem; line-height: 1.35; }
-.admin-referral-filters { box-shadow: none; }
-.admin-referral-filter-tools { display: grid; gap: .9rem; }
-@media (min-width: 640px) {
-  .admin-referral-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .referral-metric { min-height: 6rem; gap: .85rem; padding: .9rem 1rem; }
-  .admin-referral-filter-tools { grid-template-columns: minmax(15rem, .8fr) minmax(0, 1.4fr); align-items: end; }
-}
-@media (max-width: 420px) {
-  .referral-metric { gap: .55rem; padding-inline: .6rem; }
-  .referral-metric-icon { width: 2rem; height: 2rem; }
-  .referral-metric-label { font-size: .6875rem; }
-  .referral-metric-copy strong { font-size: .9375rem; }
-  .referral-metric-detail { font-size: .625rem; }
-}
-html[data-theme="dark"] .admin-status-tab.is-active { border-bottom-color: var(--card); }
-html[data-theme="dark"] .admin-status-count { background: var(--dark-surface); color: var(--dark-muted-ink); }
-html[data-theme="dark"] .admin-status-tab.is-active .admin-status-count { background: #264e77; color: var(--dark-ink); }
 html[data-theme="dark"] .login-context .brand-name,
 html[data-theme="dark"] .login-context .brand-name span { color: var(--dark-ink); }
 html[data-theme="dark"] .login-context .brand-description,

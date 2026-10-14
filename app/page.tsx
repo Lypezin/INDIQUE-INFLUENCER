@@ -563,10 +563,6 @@ function StatCard({ label, value, icon, sub, color }: { label: string; value: st
   return <div className="stat-card"><div className="flex items-start justify-between gap-3"><div className="text-xs font-semibold leading-5 text-muted-foreground">{label}</div><div className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${colors[color]}`}>{icon}</div></div><div className="metric-value mt-3 text-heading">{value}</div><div className="mt-1 text-xs text-muted-foreground">{sub}</div></div>;
 }
 
-function ReferralMetric({ label, value, icon, detail, tone }: { label: string; value: string; icon: React.ReactNode; detail: string; tone: "blue" | "green" | "amber" }) {
-  return <div className={`referral-metric tone-${tone}`}><span className="referral-metric-icon" aria-hidden="true">{icon}</span><span className="referral-metric-copy"><span className="referral-metric-label">{label}</span><strong>{value}</strong><span className="referral-metric-detail">{detail}</span></span></div>;
-}
-
 function ReferralRow({ referral }: { referral: Referral }) {
   const [expanded, setExpanded] = useState(false);
   const progress = referral.route_goal > 0 ? Math.min(100, Math.round(referral.routes / referral.route_goal * 100)) : 0;
@@ -590,7 +586,7 @@ function AdminDashboard({ activeTab, overview, profile, refresh, dataVersion, on
   }, [refresh]);
   if (!overview) return <div className="grid min-h-64 place-items-center text-sm text-muted-foreground"><LoaderCircle className="mr-2 animate-spin" size={18}/>Carregando área administrativa…</div>;
   return <div key={activeTab} className="admin-panel-enter">
-    {activeTab !== "data-crazy" && <div className="page-heading mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h1 className="text-[28px] font-bold tracking-[-.03em] text-heading sm:text-[34px]">{adminTabs.find((tab) => tab.id === activeTab)?.label}</h1><p className="mt-1.5 max-w-[65ch] text-sm leading-5 text-muted-foreground">{adminTabDescriptions[activeTab]}</p></div><button type="button" onClick={() => void refreshPage()} className="secondary-action inline-flex h-11 w-fit shrink-0 items-center gap-2 rounded-lg border border-input bg-white px-3.5 text-sm font-semibold text-ink-mid hover:bg-surface-subtle"><RefreshCw size={15}/>Atualizar dados</button></div>}
+    {activeTab !== "data-crazy" && activeTab !== "referrals" && <div className="page-heading mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h1 className="text-[28px] font-bold tracking-[-.03em] text-heading sm:text-[34px]">{adminTabs.find((tab) => tab.id === activeTab)?.label}</h1><p className="mt-1.5 max-w-[65ch] text-sm leading-5 text-muted-foreground">{adminTabDescriptions[activeTab]}</p></div><button type="button" onClick={() => void refreshPage()} className="secondary-action inline-flex h-11 w-fit shrink-0 items-center gap-2 rounded-lg border border-input bg-white px-3.5 text-sm font-semibold text-ink-mid hover:bg-surface-subtle"><RefreshCw size={15}/>Atualizar dados</button></div>}
     {activeTab === "dashboard" && <AdminHome overview={overview} onTab={onTab}/>}
     {activeTab === "referrals" && <AdminReferralsPanel key={`${dataVersion}:${refreshVersion}`} influencers={overview.influencers}/>}
     {activeTab === "data-crazy" && <DataCrazySyncPanel overview={overview} refresh={refreshPage} refreshVersion={refreshVersion} onTab={onTab}/>}
@@ -1425,79 +1421,79 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
 
   const confirmationReferral = confirmation ? result?.items.find((item) => item.uuid === confirmation.uuid) : null;
 
-  return <div className="admin-referral-workspace space-y-4">
-    <div role="group" aria-label="Filtrar indicados pela situação do prêmio" className="admin-status-tabs scrollbar-thin">
-      {statusTabs.map((tab) => {
-        const Icon = tab.icon;
-        const activeClasses = tab.tone === "amber" ? "is-amber" : tab.tone === "green" ? "is-green" : "is-blue";
-        return <button key={tab.id} type="button" onClick={() => changeStatus(tab.id)} aria-pressed={rewardStatus === tab.id} className={"admin-status-tab " + (rewardStatus === tab.id ? `is-active ${activeClasses}` : "")}><span className="inline-flex items-center gap-2"><Icon size={16}/>{tab.label}</span><span className="admin-status-count">{fmtNumber(tab.count)}</span></button>;
-      })}
-    </div>
-    <div className="admin-referral-stats" aria-busy={loading}>
-      <ReferralMetric label="Entregadores" value={fmtNumber(result?.total ?? 0)} icon={<Users size={18}/>} detail="com os filtros atuais" tone="blue"/>
-      <ReferralMetric label="Corridas acumuladas" value={fmtNumber(result?.totalRoutes ?? 0)} icon={<BarChart3 size={18}/>} detail="somadas por UUID" tone="blue"/>
-      <ReferralMetric label="Metas atingidas" value={fmtNumber(result?.unlockedCount ?? 0)} icon={<CheckCircle2 size={18}/>} detail="na situação selecionada" tone="green"/>
-      <ReferralMetric label="Valor dos prêmios" value={fmtMoney(result?.unlockedPrizeCents ?? 0)} icon={<Award size={18}/>} detail={rewardStatus === "paid" ? "registrado como pago" : "da situação selecionada"} tone="amber"/>
-    </div>
-    <section className="portal-panel admin-referral-filters p-4 sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-base font-bold text-heading">Filtrar indicados</h2>
-        <button type="button" onClick={() => setRefreshKey((value) => value + 1)} disabled={loading} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-input bg-card px-3.5 text-sm font-semibold text-ink-mid hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6fc2] disabled:opacity-55"><History size={15}/>{loading ? "Atualizando…" : "Atualizar lista"}</button>
+  return <div className="admin-referral-workspace">
+    <header className="admin-referral-hero">
+      <div className="admin-referral-hero-top">
+        <div>
+          <span className="admin-referral-eyebrow"><span className="admin-referral-eyebrow-mark"/>CENTRAL DE ACOMPANHAMENTO</span>
+          <h1>Indicados</h1>
+          <p>Da primeira corrida ao prêmio: acompanhe cada indicação em um só lugar.</p>
+        </div>
+        <button type="button" onClick={() => setRefreshKey((value) => value + 1)} disabled={loading} className="admin-referral-refresh">
+          <RefreshCw size={16} className={loading ? "animate-spin" : ""}/>{loading ? "Atualizando" : "Atualizar lista"}
+        </button>
       </div>
-      <div className="admin-referral-filter-tools mt-3">
-        <label className="relative block text-xs font-semibold text-muted-foreground"><span className="sr-only">Buscar indicado</span><Search size={16} className="pointer-events-none absolute left-3 top-[13px] text-muted-foreground"/><input type="search" value={search} onChange={(event) => changeSearch(event.target.value)} placeholder="Buscar nome, UUID, ID do lead, telefone ou CPF" className="h-11 w-full rounded-lg border border-input bg-card pl-9 pr-3 text-sm font-medium text-ink-strong outline-none focus:border-[#2f6fc2] focus:ring-2 focus:ring-[#d7e8fa]" /></label>
-        <div className="min-w-0">
-          <div className="mb-2 text-xs font-semibold text-muted-foreground">Influenciador</div>
-          <div role="group" aria-label="Filtrar indicados por influenciador" className="scrollbar-thin flex gap-2 overflow-x-auto pb-1">
-            {[{ id: "all", name: "Todos" }, ...influencers].map((item) => <button key={item.id} type="button" onClick={() => changeFilter(item.id)} aria-pressed={filterId === item.id} className={"min-h-11 shrink-0 rounded-full border px-3.5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring " + (filterId === item.id ? "border-primary bg-primary text-white" : "border-input bg-card text-ink-mid hover:bg-surface-subtle")}>{item.name}</button>)}
-          </div>
+      <div className="admin-referral-hero-signal"><span>NO RADAR</span><strong>{loading && !result ? "—" : fmtNumber(statusCounts.to_pay)}</strong><span>{statusCounts.to_pay === 1 ? "prêmio aguarda pagamento" : "prêmios aguardam pagamento"}</span><button type="button" onClick={() => changeStatus("to_pay")}>Ver pendências <ArrowRight size={15}/></button></div>
+    </header>
+
+    <div className="admin-referral-statuses" role="group" aria-label="Situação dos indicados">
+        {statusTabs.map((tab) => {
+          const Icon = tab.icon;
+          return <button key={tab.id} type="button" onClick={() => changeStatus(tab.id)} aria-pressed={rewardStatus === tab.id} className={`admin-referral-status admin-referral-status-${tab.tone} ${rewardStatus === tab.id ? "is-active" : ""}`}>
+            <span className="admin-referral-status-icon"><Icon size={19}/></span>
+            <span className="admin-referral-status-label">{tab.label}</span>
+            <strong>{loading && !result ? "—" : fmtNumber(tab.count)}</strong>
+            <span className="admin-referral-status-detail">{tab.id === "progress" ? "Acompanhar corridas" : tab.id === "to_pay" ? "Registrar prêmios" : "Consultar registros"}</span>
+          </button>;
+        })}
+    </div>
+
+    <section className="admin-referral-board" aria-label="Lista de indicados">
+      <div className="admin-referral-board-heading">
+        <div><span className="admin-referral-section-kicker">CARTEIRA DE INDICAÇÕES</span><h2>{rewardStatus === "progress" ? "Em progresso" : rewardStatus === "to_pay" ? "Prêmios a pagar" : "Pagamentos registrados"}</h2><p>{rewardStatus === "progress" ? "Acompanhe quem está mais perto da meta." : rewardStatus === "to_pay" ? "Confira os dados antes de registrar cada pagamento." : "Consulte os prêmios já pagos e seu histórico."}</p></div>
+        <span className="admin-referral-result-count">{loading && !result ? "Carregando…" : `${fmtNumber(result?.total ?? 0)} ${result?.total === 1 ? "indicado" : "indicados"}`}</span>
+      </div>
+      <div className="admin-referral-toolbar">
+        <label className="admin-referral-search">
+          <Search size={18} aria-hidden="true"/>
+          <span className="sr-only">Buscar indicado</span>
+          <input type="search" value={search} onChange={(event) => changeSearch(event.target.value)} placeholder="Nome, UUID, lead, telefone ou CPF" />
+        </label>
+        <label className="admin-referral-owner-filter">
+          <span>Influenciador</span>
+          <select value={filterId} onChange={(event) => changeFilter(event.target.value)}>
+            <option value="all">Todos os influenciadores</option>
+            {influencers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </label>
+        {(filterId !== "all" || search) && <button type="button" className="admin-referral-clear" onClick={() => { setFilterId("all"); setSearch(""); setPage(0); setResult(null); }}>Limpar filtros</button>}
+      </div>
+
+      <div className="admin-referral-summary" aria-live="polite" aria-busy={loading}>
+        <div className="admin-referral-summary-lead">
+          <span>EXIBINDO</span>
+          <strong>{rewardStatus === "progress" ? "Indicações em andamento" : rewardStatus === "to_pay" ? "Pagamentos pendentes" : "Prêmios pagos"}</strong>
+        </div>
+        <div className="admin-referral-summary-facts">
+          <span><strong>{fmtNumber(result?.totalRoutes ?? 0)}</strong> corridas acumuladas</span>
+          {rewardStatus !== "progress" && <span><strong>{fmtMoney(result?.unlockedPrizeCents ?? 0)}</strong> em prêmios</span>}
         </div>
       </div>
+
+      {error && <div role="alert" className="admin-referral-message is-error"><CircleAlert size={18}/><span>{error}</span><button type="button" onClick={() => setRefreshKey((value) => value + 1)}>Tentar novamente</button></div>}
+      {actionError && <div role="alert" className="admin-referral-message is-error"><CircleAlert size={18}/><span>{actionError}</span></div>}
+      {actionNotice && <div role="status" className="admin-referral-message is-success"><CheckCircle2 size={18}/><span>{actionNotice}</span></div>}
+
+      {loading && !result ? <div className="admin-referral-load"><LoaderCircle className="animate-spin" size={20}/>Carregando indicados…</div>
+        : result?.items.length === 0 ? <EmptyState title={rewardStatus === "progress" ? "Nenhum indicado em progresso" : rewardStatus === "to_pay" ? "Nenhum pagamento pendente" : "Nenhum pagamento registrado"} detail={filterId !== "all" || search ? "Altere a busca ou limpe os filtros para ver outros indicados." : rewardStatus === "to_pay" ? "Quando um entregador atingir a meta, ele aparecerá aqui para você registrar o pagamento." : rewardStatus === "paid" ? "Os pagamentos registrados aparecerão aqui com data e valor." : "Os entregadores com corridas abaixo da meta aparecerão aqui."}/>
+        : result ? <>
+          <div className="admin-referral-list-head" aria-hidden="true"><span>Entregador</span><span>Responsável</span><span>Corridas</span><span>Prêmio</span><span>Ação</span></div>
+          <div className="admin-referral-list" aria-busy={loading}>
+            {result.items.map((item) => <AdminReferralRow key={item.referral_id} item={item} influencers={influencers} busy={pendingReferralId === adminReferralKey(item)} onAssign={performAssignment} onRequestConfirm={setConfirmation}/>)}
+          </div>
+          <div className="admin-referral-footer"><span>{loading ? "Atualizando… · " : ""}{fmtNumber(firstItem)}–{fmtNumber(lastItem)} de {fmtNumber(result.total)} indicados</span><div><button type="button" onClick={() => setPage((value) => Math.max(0, value - 1))} disabled={page === 0 || loading}>Anterior</button><button type="button" onClick={() => setPage((value) => value + 1)} disabled={(page + 1) * pageSize >= result.total || loading}>Próxima</button></div></div>
+        </> : null}
     </section>
-
-    {error && <p role="alert" className="rounded-xl bg-status-danger-surface px-4 py-3 text-sm text-status-danger">{error}</p>}
-    {actionError && <p role="alert" className="rounded-xl bg-status-danger-surface px-4 py-3 text-sm text-status-danger">{actionError}</p>}
-    {actionNotice && <p role="status" className="rounded-xl bg-status-success-surface px-4 py-3 text-sm text-status-success">{actionNotice}</p>}
-    {loading && !result ? <div className="grid min-h-56 place-items-center portal-panel text-sm text-muted-foreground"><LoaderCircle className="mr-2 animate-spin" size={18}/>Carregando indicados…</div> : result?.items.length === 0 ? <div className="portal-panel"><EmptyState title={rewardStatus === "progress" ? "Nenhum indicado em progresso" : rewardStatus === "to_pay" ? "Nenhum pagamento pendente" : "Nenhum pagamento registrado"} detail={rewardStatus === "to_pay" ? "Quando um entregador atingir a meta, ele aparecerá aqui para você registrar o pagamento." : rewardStatus === "paid" ? "Os indicados pagos aparecerão aqui, com a data e o valor registrados." : "Os entregadores com corridas abaixo da meta aparecerão aqui. Ajuste os filtros para ver outros indicados."}/></div> : result ? <>
-      <div className="overflow-hidden portal-panel xl:hidden" aria-busy={loading}>
-        <div className="grid">{result.items.map((item) => {
-          const progress = Math.min(100, Math.round(Number(item.routes) / item.route_goal * 100));
-          const paidAmount = item.paid_amount_cents ?? item.prize_cents;
-          const statusText = item.reward_status === "paid" ? "Pago" : item.reward_status === "to_pay" ? "A pagar" : "Em progresso";
-          const statusTone = item.reward_status === "paid" ? "bg-status-success-surface text-status-success" : item.reward_status === "to_pay" ? "bg-status-warning-surface text-status-warning" : "bg-brand-soft text-brand-strong";
-          return <article key={item.referral_id} className="border-b border-border-subtle p-4 lg:p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><div className="courier-name">{item.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-muted-foreground">{item.uuid ? `UUID · ${item.uuid}` : `ID do lead · ${item.lead_id}`}</div></div><div className="flex flex-col items-end gap-2"><span className="rounded-full bg-brand-soft px-2.5 py-1 text-xs font-bold text-brand-strong">{item.influencer_name}</span><span className={"rounded-full px-2.5 py-1 text-xs font-bold " + statusTone}>{statusText}</span></div></div>
-            <div className="mt-3 text-xs text-ink-mid">{item.region || "Região não informada"}</div>
-            <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><CalendarDays size={13}/>Liberação: {fmtDate(item.released_at)}</div>
-            <div className="mt-3"><div className="flex items-center justify-between gap-3 text-xs"><span className="font-semibold tabular-nums text-ink-strong">{fmtNumber(Number(item.routes))} / {fmtNumber(item.route_goal)} corridas</span><span className="font-bold tabular-nums text-brand-strong">{progress}%</span></div><div className="route-meter mt-1.5 h-1.5" role="progressbar" aria-label={"Progresso de " + (item.name || "entregador")} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-valuetext={fmtNumber(Number(item.routes)) + " de " + fmtNumber(item.route_goal) + " corridas"}><div className="route-meter-fill" style={{ transform: "scaleX(" + (progress / 100) + ")" }}/></div>{item.is_unidentified && <p className="mt-2 text-xs leading-5 text-status-warning">Sem UUID para cruzar corridas.</p>}</div>
-            <div className="mt-3 flex items-center justify-between gap-2"><span className="text-xs font-bold text-muted-foreground">{item.reward_status === "paid" ? "Pago em " + fmtDate(item.paid_at) + (item.paid_influencer_name ? " para " + item.paid_influencer_name : "") : item.reward_status === "to_pay" ? "Meta atingida · pronto para pagamento" : "Faltam " + fmtNumber(item.routes_remaining) + " corridas"}</span><span className="text-sm font-bold tabular-nums text-ink-strong">{fmtMoney(paidAmount)}</span></div>
-            <AdminReferralHistory item={item}/>
-            <details className="courier-contact mt-2 border-t border-border-subtle pt-1"><summary className="min-h-11 cursor-pointer py-2 text-xs font-bold text-brand-strong">Ver contato</summary><div className="pb-1 text-xs leading-5 text-ink-mid">Telefone · {item.phone || "indisponível"}<br/>CPF · {item.cpf || "indisponível"}</div></details>
-            <AdminReferralActions key={adminReferralKey(item) + ":" + item.influencer_id} item={item} influencers={influencers} busy={pendingReferralId === adminReferralKey(item)} onAssign={performAssignment} onRequestConfirm={setConfirmation}/>
-          </article>;
-        })}</div>
-      </div>
-
-      <div className="hidden overflow-hidden portal-panel xl:block" aria-busy={loading}>
-        <div className="overflow-x-auto"><table className="w-full min-w-[1040px] border-collapse text-left">
-          <thead className="bg-surface-subtle text-xs font-bold uppercase tracking-[.08em] text-muted-foreground"><tr><th className="px-4 py-3">Entregador</th><th className="px-4 py-3">Responsável</th><th className="px-4 py-3">Corridas e progresso</th><th className="px-4 py-3">Prêmio</th><th className="min-w-[290px] px-4 py-3">Ações</th></tr></thead>
-          <tbody className="divide-y divide-border-subtle">{result.items.map((item) => {
-            const progress = Math.min(100, Math.round(Number(item.routes) / item.route_goal * 100));
-            const paidAmount = item.paid_amount_cents ?? item.prize_cents;
-            const statusText = item.reward_status === "paid" ? "Pago" : item.reward_status === "to_pay" ? "A pagar" : "Em progresso";
-            const statusTone = item.reward_status === "paid" ? "bg-status-success-surface text-status-success" : item.reward_status === "to_pay" ? "bg-status-warning-surface text-status-warning" : "bg-brand-soft text-brand-strong";
-            return <tr key={item.referral_id} className="align-top hover:bg-surface-subtle/70">
-              <td className="max-w-[300px] px-4 py-4"><div className="courier-name">{item.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-muted-foreground">{item.uuid ? `UUID · ${item.uuid}` : `ID do lead · ${item.lead_id}`}</div><div className="mt-1 text-xs text-muted-foreground">{item.region || "Região não informada"} · Liberação: {fmtDate(item.released_at)}</div><details className="courier-contact mt-1"><summary className="min-h-11 cursor-pointer py-2 text-xs font-bold text-brand-strong">Ver contato</summary><div className="pb-1 text-xs leading-5 text-ink-mid">Telefone · {item.phone || "indisponível"}<br/>CPF · {item.cpf || "indisponível"}</div></details><AdminReferralHistory item={item}/></td>
-              <td className="px-4 py-4"><div className="text-sm font-semibold text-ink-strong">{item.influencer_name}</div><span className={"mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-bold " + statusTone}>{statusText}</span></td>
-              <td className="w-[245px] px-4 py-4"><div className="flex justify-between gap-3 text-xs"><span className="font-semibold tabular-nums text-ink-strong">{fmtNumber(Number(item.routes))} / {fmtNumber(item.route_goal)}</span><span className="font-bold tabular-nums text-brand-strong">{progress}%</span></div><div className="route-meter mt-1.5 h-1.5" role="progressbar" aria-label={"Progresso de " + (item.name || "entregador")} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-valuetext={fmtNumber(Number(item.routes)) + " de " + fmtNumber(item.route_goal) + " corridas"}><div className="route-meter-fill" style={{ transform: "scaleX(" + (progress / 100) + ")" }}/></div>{item.is_unidentified && <div className="mt-2 text-xs text-status-warning">Sem UUID para cruzar corridas.</div>}<div className="mt-2 text-xs text-muted-foreground">{item.reward_status === "paid" ? "Pago em " + fmtDate(item.paid_at) : item.reward_status === "to_pay" ? "Meta atingida" : "Faltam " + fmtNumber(item.routes_remaining) + " corridas"}</div></td>
-              <td className="px-4 py-4"><div className="text-sm font-bold tabular-nums text-ink-strong">{fmtMoney(paidAmount)}</div>{item.reward_status === "paid" && item.paid_influencer_name && <div className="mt-1 text-xs text-muted-foreground">Pago para {item.paid_influencer_name}</div>}</td>
-              <td className="min-w-[290px] px-4 py-4"><AdminReferralActions key={adminReferralKey(item) + ":" + item.influencer_id} item={item} influencers={influencers} busy={pendingReferralId === adminReferralKey(item)} onAssign={performAssignment} onRequestConfirm={setConfirmation}/></td>
-            </tr>;
-          })}</tbody>
-        </table></div>
-      </div>
-      <div className="flex flex-col justify-between gap-3 text-xs text-muted-foreground sm:flex-row sm:items-center"><span>{loading ? "Atualizando resultados… · " : ""}{fmtNumber(firstItem)}–{fmtNumber(lastItem)} de {fmtNumber(result.total)} indicados nesta guia</span><div className="flex gap-2"><button type="button" onClick={() => setPage((value) => Math.max(0, value - 1))} disabled={page === 0 || loading} className="min-h-10 rounded-lg border border-input bg-card px-3 font-semibold text-ink-mid hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50">Anterior</button><button type="button" onClick={() => setPage((value) => value + 1)} disabled={(page + 1) * pageSize >= result.total || loading} className="min-h-10 rounded-lg border border-input bg-card px-3 font-semibold text-ink-mid hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50">Próxima</button></div></div>
-    </> : null}
     <AlertDialog open={Boolean(confirmation)} onOpenChange={(open) => { if (!open && !pendingReferralId) setConfirmation(null); }}>
       <AlertDialogContent className="border-border bg-card">
         <AlertDialogHeader>
@@ -1506,7 +1502,7 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
           <AlertDialogDescription>
             {confirmation?.action === "reopen"
               ? "O registro voltará para A pagar e poderá ser marcado novamente. O histórico da ação anterior será mantido."
-              : "Confirme apenas depois que o entregador receber " + fmtMoney(confirmationReferral?.prize_cents ?? 0) + ". O registro ficará em Pagos e a data será salva."}
+              : "Confirme apenas depois que o prêmio de " + fmtMoney(confirmationReferral?.prize_cents ?? 0) + " for pago " + (confirmationReferral?.influencer_name ? "a " + confirmationReferral.influencer_name : "ao influenciador responsável") + ". O registro ficará em Pagos e a data será salva."}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -1520,10 +1516,54 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
   </div>;
 }
 
-function AdminReferralActions({ item, influencers, busy, onAssign, onRequestConfirm }: {
+function AdminReferralRow({ item, influencers, busy, onAssign, onRequestConfirm }: {
   item: AdminReferral; influencers: Influencer[]; busy: boolean;
   onAssign: (item: AdminReferral, influencerId: string | null) => void;
   onRequestConfirm: (confirmation: { uuid: string; action: "paid" | "reopen" } | null) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const progress = item.route_goal > 0 ? Math.min(100, Math.round(Number(item.routes) / item.route_goal * 100)) : 0;
+  const paidAmount = item.paid_amount_cents ?? item.prize_cents;
+  const detailsId = `admin-referral-details-${item.referral_id}`;
+  const statusText = item.reward_status === "paid" ? "Pago" : item.reward_status === "to_pay" ? "A pagar" : "Em progresso";
+  const initials = (item.name || "?").trim().split(/\s+/).slice(0, 2).map((part) => part[0] || "").join("").toLocaleUpperCase("pt-BR");
+
+  return <article className={`admin-referral-row ${expanded ? "is-expanded" : ""}`}>
+    <div className="admin-referral-row-main">
+      <div className="admin-referral-identity">
+        <span className="admin-referral-avatar" aria-hidden="true">{initials}</span>
+        <div className="admin-referral-identity-copy"><strong className="courier-name">{item.name || "Nome não informado"}</strong>
+          <span className="admin-referral-location"><MapPin size={13}/>{item.region || "Região não informada"}</span>
+          {item.is_unidentified && <span className="admin-referral-uuid-warning"><CircleAlert size={13}/>Sem UUID para cruzar corridas</span>}
+        </div>
+      </div>
+      <div className="admin-referral-owner"><span className="admin-referral-column-label">Responsável</span><strong>{item.influencer_name}</strong>{item.assignment_overridden && <span className="admin-referral-manual">Transferência manual</span>}</div>
+      <div className="admin-referral-progress"><span className="admin-referral-column-label">Corridas</span><div className="admin-referral-progress-numbers"><strong>{fmtNumber(Number(item.routes))}</strong><span>de {fmtNumber(item.route_goal)}</span></div><div className="route-meter" role="progressbar" aria-label={`Progresso de ${item.name || "entregador"}`} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-valuetext={`${fmtNumber(Number(item.routes))} de ${fmtNumber(item.route_goal)} corridas`}><div className="route-meter-fill" style={{ transform: `scaleX(${progress / 100})` }}/></div><span className="admin-referral-progress-note">{item.reward_status === "progress" ? `Faltam ${fmtNumber(item.routes_remaining)} corridas` : "Meta atingida"}</span></div>
+      <div className="admin-referral-prize"><span className="admin-referral-column-label">Prêmio</span><strong>{fmtMoney(paidAmount)}</strong><span className={`admin-referral-pill is-${item.reward_status}`}>{statusText}</span></div>
+      <div className="admin-referral-row-actions">
+        {item.reward_status === "to_pay" && item.uuid && <button type="button" className="admin-referral-pay" onClick={() => onRequestConfirm({ uuid: item.uuid!, action: "paid" })} disabled={busy}><Check size={15}/>Registrar pagamento</button>}
+        {item.reward_status === "paid" && item.uuid && <button type="button" className="admin-referral-reopen" onClick={() => onRequestConfirm({ uuid: item.uuid!, action: "reopen" })} disabled={busy}><RotateCcw size={15}/>Reabrir</button>}
+        <button type="button" className="admin-referral-expand" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={detailsId}><span>{expanded ? "Ocultar detalhes" : "Ver detalhes"}</span><ChevronDown size={17}/></button>
+      </div>
+    </div>
+    <div id={detailsId} className="admin-referral-details" hidden={!expanded}>
+      {expanded && <>
+      <div className="admin-referral-facts">
+        <div><span>Identificador</span><strong className="break-all">{item.uuid ? `UUID · ${item.uuid}` : `ID do lead · ${item.lead_id || "indisponível"}`}</strong></div>
+        <div><span>Liberação</span><strong>{fmtDate(item.released_at)}</strong></div>
+        <div><span>Telefone</span><strong>{item.phone || "Indisponível"}</strong></div>
+        <div><span>CPF</span><strong>{item.cpf || "Indisponível"}</strong></div>
+        {item.reward_status === "paid" && <div><span>Pagamento</span><strong>{fmtDate(item.paid_at)}{item.paid_influencer_name ? ` · ${item.paid_influencer_name}` : ""}</strong></div>}
+      </div>
+      <div className="admin-referral-management"><h3>Responsável pela indicação</h3><AdminReferralActions key={adminReferralKey(item) + ":" + item.influencer_id} item={item} influencers={influencers} busy={busy} onAssign={onAssign}/><AdminReferralHistory item={item}/></div>
+      </>}
+    </div>
+  </article>;
+}
+
+function AdminReferralActions({ item, influencers, busy, onAssign }: {
+  item: AdminReferral; influencers: Influencer[]; busy: boolean;
+  onAssign: (item: AdminReferral, influencerId: string | null) => void;
 }) {
   const [destination, setDestination] = useState(item.influencer_id);
 
@@ -1541,9 +1581,7 @@ function AdminReferralActions({ item, influencers, busy, onAssign, onRequestConf
       </select>
     </label>
     <div className="flex flex-wrap gap-2">
-      <button type="button" onClick={() => onAssign(item, shouldClearOverride ? null : targetId)} disabled={busy || !assignmentChanged} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-input bg-card px-3 text-xs font-semibold text-ink-mid hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50"><ArrowRightLeft size={14}/>{busy ? "Salvando…" : "Transferir"}</button>
-      {item.reward_status === "to_pay" && item.uuid && <button type="button" onClick={() => onRequestConfirm({ uuid: item.uuid!, action: "paid" })} disabled={busy} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-bold text-white hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-55"><Check size={14}/>Marcar como pago</button>}
-      {item.reward_status === "paid" && item.uuid && <button type="button" onClick={() => onRequestConfirm({ uuid: item.uuid!, action: "reopen" })} disabled={busy} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-input bg-card px-3 text-xs font-semibold text-ink-mid hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-55"><RotateCcw size={14}/>Reabrir pagamento</button>}
+      <button type="button" onClick={() => onAssign(item, shouldClearOverride ? null : targetId)} disabled={busy || !assignmentChanged} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-input bg-card px-3 text-xs font-semibold text-ink-mid hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50"><ArrowRightLeft size={14}/>{busy ? "Salvando…" : "Transferir"}</button>
     </div>
     {item.assignment_overridden && <p className="text-xs leading-5 text-muted-foreground">Transferência manual. A próxima sincronização manterá este responsável.</p>}
   </div>;
@@ -1552,7 +1590,7 @@ function AdminReferralActions({ item, influencers, busy, onAssign, onRequestConf
 function AdminReferralHistory({ item }: { item: AdminReferral }) {
   if (!item.recent_events?.length) return null;
   return <details className="mt-2 border-t border-border-subtle pt-1">
-    <summary className="min-h-10 cursor-pointer py-2 text-xs font-semibold text-brand-strong">Histórico administrativo ({item.recent_events.length})</summary>
+    <summary className="min-h-11 cursor-pointer py-2 text-xs font-semibold text-brand-strong">Histórico administrativo ({item.recent_events.length})</summary>
     <ol className="space-y-2 pb-2">
       {item.recent_events.map((event, index) => {
         const description = event.event_type === "assignment_changed"
