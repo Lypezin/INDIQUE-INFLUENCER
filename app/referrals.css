@@ -196,7 +196,8 @@ html[data-theme="dark"] .admin-referral-status { --status-surface: var(--dark-ac
 html[data-theme="dark"] .admin-referral-status.is-active { background: var(--status-surface); }
 html[data-theme="dark"] .admin-referral-hero-signal { background: #0b2847; }
 @media (prefers-reduced-motion: reduce) {
-  .admin-referral-workspace, .admin-referral-details, .admin-referral-progress .route-meter-fill::after { animation: none; }
+  .admin-referral-workspace, .admin-referral-details { animation: none; }
+  .admin-referral-progress .route-meter.is-active .route-meter-fill::after { animation: referral-meter-flow 2.8s linear infinite !important; }
   .admin-referral-refresh, .admin-referral-hero-signal button, .admin-referral-status, .admin-referral-status::before, .admin-referral-row, .admin-referral-row-actions button, .admin-referral-expand svg, .admin-referral-progress .route-meter-fill { transition: none; }
   .admin-referral-refresh:hover:not(:disabled), .admin-referral-hero-signal button:hover, .admin-referral-status:hover, .admin-referral-row-actions button:hover:not(:disabled) { transform: none; }
 }
