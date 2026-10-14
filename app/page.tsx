@@ -155,29 +155,11 @@ export default function Home() {
   const recoveryMode = useSyncExternalStore(subscribeRecovery, getRecoverySnapshot, getRecoveryServerSnapshot);
   const [loadError, setLoadError] = useState("");
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
-  const [theme, setTheme] = useState<Theme>("light");
   const [mobileMenu, setMobileMenu] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const [search, setSearch] = useState("");
   const [onlyUnlocked, setOnlyUnlocked] = useState(false);
-
-  useEffect(() => {
-    try {
-      const savedTheme = window.localStorage.getItem("indique-ganhe:theme:v2");
-      // Read the saved preference after hydration to keep the server-rendered theme deterministic.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (savedTheme === "light" || savedTheme === "dark") setTheme(savedTheme);
-    }
-    catch { /* Theme preference is optional when browser storage is unavailable. */ }
-  }, []);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.style.colorScheme = theme;
-    try { window.localStorage.setItem("indique-ganhe:theme:v2", theme); }
-    catch { /* The current theme still works when browser storage is unavailable. */ }
-  }, [theme]);
 
   const selectTab = useCallback((tab: TabId) => {
     setActiveTab(tab);
@@ -363,7 +345,7 @@ export default function Home() {
 
   return (
     <main className="portal-shell min-h-screen bg-background text-foreground">
-      <div className={`portal-layout mx-auto min-h-screen max-w-[1600px] ${isAdmin ? "has-sidebar" : ""} ${sidebarCollapsed ? "is-collapsed" : ""}`}>
+      <div className={`portal-layout min-h-screen ${isAdmin ? "has-sidebar" : "mx-auto max-w-[1600px]"} ${sidebarCollapsed ? "is-collapsed" : ""}`}>
         {isAdmin && <aside className={`portal-sidebar sticky top-0 hidden h-screen min-w-0 self-start flex-col overflow-y-auto border-r border-border bg-white px-4 py-7 lg:flex ${sidebarCollapsed ? "is-collapsed" : ""}`}>
           <div className="portal-sidebar-head">
             <Brand compact={sidebarCollapsed} />
@@ -390,7 +372,7 @@ export default function Home() {
             <div className="flex shrink-0 items-center gap-1 sm:gap-3">
               <div className="hidden text-right sm:block"><div className="text-xs font-semibold">{isAdmin ? profile.display_name || "Administrador" : influencer?.name}</div><div className="mt-0.5 max-w-44 truncate text-sm text-[#87979a]">{profile.email}</div></div>
               {isAdmin ? <button type="button" onClick={() => { selectTab("profile"); setMobileMenu(false); }} aria-label="Abrir meu perfil" aria-current={activeTab === "profile" ? "page" : undefined} title="Meu perfil" className="account-avatar flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-soft text-sm font-bold text-brand-strong transition hover:bg-surface-subtle">{(profile.display_name?.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join("") || "AD").toUpperCase()}</button> : <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-soft text-sm font-bold text-brand-strong">{(influencer?.name?.slice(0, 2) ?? "IG").toUpperCase()}</div>}
-              <button onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")} className="flex size-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-subtle" title={`Ativar modo ${theme === "dark" ? "claro" : "escuro"}`} aria-label={`Ativar modo ${theme === "dark" ? "claro" : "escuro"}`}>{theme === "dark" ? <Sun size={19}/> : <Moon size={19}/>}</button>
+              <ThemeSwitch />
               <button onClick={() => void supabase.auth.signOut()} className="flex size-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-subtle" title="Sair" aria-label="Sair"><LogOut size={19} /></button>
             </div>
           </header>
@@ -411,6 +393,30 @@ export default function Home() {
       </div>
     </main>
   );
+}
+
+function subscribeTheme(callback: () => void) {
+  window.addEventListener("indique-ganhe-theme-change", callback);
+  return () => window.removeEventListener("indique-ganhe-theme-change", callback);
+}
+
+function getThemeSnapshot(): Theme {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+
+function getThemeServerSnapshot(): Theme { return "light"; }
+
+function ThemeSwitch() {
+  const theme = useSyncExternalStore(subscribeTheme, getThemeSnapshot, getThemeServerSnapshot);
+  function toggle() {
+    const next: Theme = getThemeSnapshot() === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    document.documentElement.style.colorScheme = next;
+    try { window.localStorage.setItem("indique-ganhe:theme:v2", next); }
+    catch { /* The current theme still works when browser storage is unavailable. */ }
+    window.dispatchEvent(new Event("indique-ganhe-theme-change"));
+  }
+  return <button type="button" onClick={toggle} className="flex size-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-subtle" title={`Ativar modo ${theme === "dark" ? "claro" : "escuro"}`} aria-label={`Ativar modo ${theme === "dark" ? "claro" : "escuro"}`}>{theme === "dark" ? <Sun size={19}/> : <Moon size={19}/>}</button>;
 }
 
 function Brand({ compact = false }: { compact?: boolean }) {
@@ -1311,6 +1317,7 @@ function ProfileSettingsPanel({ profile, onAdminNameSaved }: { profile: Profile;
 function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
   const pageSize = 50;
   const [filterId, setFilterId] = useState("all");
+  const [idFilter, setIdFilter] = useState<"all" | "missing">("all");
   const [rewardStatus, setRewardStatus] = useState<AdminReferralStatus>("progress");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
@@ -1333,6 +1340,7 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
           limit: pageSize,
           offset: page * pageSize,
           influencerId: filterId,
+          idFilter,
           search: search.trim(),
           rewardStatus,
         });
@@ -1351,7 +1359,7 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
       }
     }, search.trim() ? 250 : 0);
     return () => { cancelled = true; window.clearTimeout(timeout); };
-  }, [filterId, page, refreshKey, rewardStatus, search]);
+  }, [filterId, idFilter, page, refreshKey, rewardStatus, search]);
 
   const firstItem = result && result.total > 0 ? page * pageSize + 1 : 0;
   const lastItem = result ? Math.min((page + 1) * pageSize, result.total) : 0;
@@ -1364,6 +1372,13 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
 
   function changeFilter(value: string) {
     setFilterId(value);
+    setPage(0);
+    setResult(null);
+  }
+
+  function changeIdFilter(value: "all" | "missing") {
+    setIdFilter(value);
+    if (value === "missing") setRewardStatus("progress");
     setPage(0);
     setResult(null);
   }
@@ -1466,7 +1481,14 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
             {influencers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
         </label>
-        {(filterId !== "all" || search) && <button type="button" className="admin-referral-clear" onClick={() => { setFilterId("all"); setSearch(""); setPage(0); setResult(null); }}>Limpar filtros</button>}
+        <label className={`admin-referral-id-filter ${idFilter === "missing" ? "is-active" : ""}`}>
+          <span>Identificação</span>
+          <select value={idFilter} onChange={(event) => changeIdFilter(event.target.value as "all" | "missing")}>
+            <option value="all">Todos os indicados</option>
+            <option value="missing">Mensagens · sem ID</option>
+          </select>
+        </label>
+        {(filterId !== "all" || idFilter !== "all" || search) && <button type="button" className="admin-referral-clear" onClick={() => { setFilterId("all"); setIdFilter("all"); setSearch(""); setPage(0); setResult(null); }}>Limpar filtros</button>}
       </div>
 
       <div className="admin-referral-summary" aria-live="polite" aria-busy={loading}>
@@ -1485,7 +1507,7 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
       {actionNotice && <div role="status" className="admin-referral-message is-success"><CheckCircle2 size={18}/><span>{actionNotice}</span></div>}
 
       {loading && !result ? <div className="admin-referral-load"><LoaderCircle className="animate-spin" size={20}/>Carregando indicados…</div>
-        : result?.items.length === 0 ? <EmptyState title={rewardStatus === "progress" ? "Nenhum indicado em progresso" : rewardStatus === "to_pay" ? "Nenhum pagamento pendente" : "Nenhum pagamento registrado"} detail={filterId !== "all" || search ? "Altere a busca ou limpe os filtros para ver outros indicados." : rewardStatus === "to_pay" ? "Quando um entregador atingir a meta, ele aparecerá aqui para você registrar o pagamento." : rewardStatus === "paid" ? "Os pagamentos registrados aparecerão aqui com data e valor." : "Os entregadores com corridas abaixo da meta aparecerão aqui."}/>
+        : result?.items.length === 0 ? <EmptyState title={idFilter === "missing" ? "Nenhum indicado de Mensagens nesta seleção" : rewardStatus === "progress" ? "Nenhum indicado em progresso" : rewardStatus === "to_pay" ? "Nenhum pagamento pendente" : "Nenhum pagamento registrado"} detail={filterId !== "all" || idFilter !== "all" || search ? "Altere a busca ou limpe os filtros para ver outros indicados." : rewardStatus === "to_pay" ? "Quando um entregador atingir a meta, ele aparecerá aqui para você registrar o pagamento." : rewardStatus === "paid" ? "Os pagamentos registrados aparecerão aqui com data e valor." : "Os entregadores com corridas abaixo da meta aparecerão aqui."}/>
         : result ? <>
           <div className="admin-referral-list-head" aria-hidden="true"><span>Entregador</span><span>Responsável</span><span>Corridas</span><span>Prêmio</span><span>Ação</span></div>
           <div className="admin-referral-list" aria-busy={loading}>
@@ -1532,7 +1554,7 @@ function AdminReferralRow({ item, influencers, busy, onAssign, onRequestConfirm 
     <div className="admin-referral-row-main">
       <div className="admin-referral-identity">
         <span className="admin-referral-avatar" aria-hidden="true">{initials}</span>
-        <div className="admin-referral-identity-copy"><strong className="courier-name">{item.name || "Nome não informado"}</strong>
+        <div className="admin-referral-identity-copy"><div className="admin-referral-name-line"><strong className="courier-name">{item.name || "Nome não informado"}</strong>{item.is_unidentified && <span className="admin-referral-source-tag"><Mail size={11} aria-hidden="true"/>Mensagens</span>}</div>
           <span className="admin-referral-location"><MapPin size={13}/>{item.region || "Região não informada"}</span>
           {item.is_unidentified && <span className="admin-referral-uuid-warning"><CircleAlert size={13}/>Sem UUID para cruzar corridas</span>}
         </div>
@@ -1546,7 +1568,7 @@ function AdminReferralRow({ item, influencers, busy, onAssign, onRequestConfirm 
         <button type="button" className="admin-referral-expand" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={detailsId}><span>{expanded ? "Ocultar detalhes" : "Ver detalhes"}</span><ChevronDown size={17}/></button>
       </div>
     </div>
-    <div id={detailsId} className="admin-referral-details" hidden={!expanded}>
+    <div id={detailsId} className={`admin-referral-details ${item.reward_status === "progress" && !item.recent_events?.length ? "is-facts-only" : ""}`} hidden={!expanded}>
       {expanded && <>
       <div className="admin-referral-facts">
         <div><span>Identificador</span><strong className="break-all">{item.uuid ? `UUID · ${item.uuid}` : `ID do lead · ${item.lead_id || "indisponível"}`}</strong></div>
@@ -1555,7 +1577,7 @@ function AdminReferralRow({ item, influencers, busy, onAssign, onRequestConfirm 
         <div><span>CPF</span><strong>{item.cpf || "Indisponível"}</strong></div>
         {item.reward_status === "paid" && <div><span>Pagamento</span><strong>{fmtDate(item.paid_at)}{item.paid_influencer_name ? ` · ${item.paid_influencer_name}` : ""}</strong></div>}
       </div>
-      <div className="admin-referral-management"><h3>Responsável pela indicação</h3><AdminReferralActions key={adminReferralKey(item) + ":" + item.influencer_id} item={item} influencers={influencers} busy={busy} onAssign={onAssign}/><AdminReferralHistory item={item}/></div>
+      {(item.reward_status !== "progress" || Boolean(item.recent_events?.length)) && <div className="admin-referral-management">{item.reward_status !== "progress" && <><h3>Responsável pela indicação</h3><AdminReferralActions key={adminReferralKey(item) + ":" + item.influencer_id} item={item} influencers={influencers} busy={busy} onAssign={onAssign}/></>}<AdminReferralHistory item={item}/></div>}
       </>}
     </div>
   </article>;

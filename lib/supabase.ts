@@ -86,12 +86,13 @@ export async function callAdminApi<T>(
     });
     data = result.data; error = result.error;
   } else if (action === "admin-referrals") {
-    const result = await supabase.schema(DATA_SCHEMA).rpc("admin_referrals_page_filtered", {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("admin_referrals_page_filtered_v2", {
       p_reward_status: payload.rewardStatus,
       p_limit: payload.limit,
       p_offset: payload.offset,
       p_influencer_id: payload.influencerId,
       p_search: payload.search,
+      p_id_filter: payload.idFilter,
     });
     data = result.data; error = result.error;
   } else if (action === "referral-assignment") {

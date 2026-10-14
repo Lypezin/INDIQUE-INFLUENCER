@@ -611,8 +611,8 @@ button:not(:disabled):not(.mobile-menu-backdrop):active { transform: scale(.985)
 .portal-shell {
   background: var(--background);
 }
-.portal-layout.has-sidebar { grid-template-columns: 258px minmax(0, 1fr); }
-.portal-layout.has-sidebar.is-collapsed { grid-template-columns: 76px minmax(0, 1fr); }
+.portal-layout.has-sidebar { --portal-sidebar-width: 258px; grid-template-columns: var(--portal-sidebar-width) minmax(0, 1fr); background: linear-gradient(to right, var(--sidebar) var(--portal-sidebar-width), var(--background) var(--portal-sidebar-width)); }
+.portal-layout.has-sidebar.is-collapsed { --portal-sidebar-width: 76px; }
 .portal-sidebar {
   z-index: 21;
   border-color: #315d8b !important;
@@ -720,7 +720,7 @@ html[data-theme="dark"] .login-context { background: #102c4c; }
 
 @media (max-width: 1023px) {
   .portal-layout.has-sidebar,
-  .portal-layout.has-sidebar.is-collapsed { grid-template-columns: minmax(0, 1fr); }
+  .portal-layout.has-sidebar.is-collapsed { grid-template-columns: minmax(0, 1fr); background: var(--background); }
   .portal-topbar { height: 4.75rem; }
   .mobile-menu-panel { background: var(--card) !important; }
 }
