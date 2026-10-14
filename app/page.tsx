@@ -383,7 +383,7 @@ export default function Home() {
               <div className="grid gap-1 sm:grid-cols-2">{visibleTabs.map((tab) => <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => { selectTab(tab.id); closeMobileMenu(); }} />)}</div>
             </nav>
           </div>}
-          <div className={`mx-auto w-full px-4 pb-12 pt-7 sm:px-8 sm:pt-9 lg:px-10 ${isAdmin && activeTab === "referrals" ? "max-w-[1800px]" : "max-w-[1320px]"}`}>
+          <div className={`mx-auto w-full px-4 pb-12 pt-7 sm:px-8 sm:pt-9 lg:px-10 ${isAdmin ? "max-w-[1800px]" : "max-w-[1320px]"}`}>
             {loadError && <div className="mb-5 flex items-start gap-3 rounded-xl border border-[#f2d8bd] bg-[#fffaf4] p-4 text-sm text-[#84572f]"><CircleAlert size={18} className="mt-0.5 shrink-0" />{loadError}</div>}
             {!isAdmin ? <InfluencerDashboard referrals={referrals} influencer={influencer} lastImportAt={lastImportAt} search={search} setSearch={setSearch} onlyUnlocked={onlyUnlocked} setOnlyUnlocked={setOnlyUnlocked} /> : (
               <AdminDashboard activeTab={activeTab} overview={overview} profile={profile} refresh={refreshAdmin} dataVersion={workspaceDataRevision} onTab={selectTab} onAdminNameSaved={updateProfileDisplayName} />
@@ -591,8 +591,8 @@ function AdminDashboard({ activeTab, overview, profile, refresh, dataVersion, on
     setRefreshVersion((version) => version + 1);
   }, [refresh]);
   if (!overview) return <div className="grid min-h-64 place-items-center text-sm text-muted-foreground"><LoaderCircle className="mr-2 animate-spin" size={18}/>Carregando área administrativa…</div>;
-  return <div key={activeTab} className="admin-panel-enter">
-    {activeTab !== "data-crazy" && activeTab !== "referrals" && <div className="page-heading mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h1 className="text-[28px] font-bold tracking-[-.03em] text-heading sm:text-[34px]">{adminTabs.find((tab) => tab.id === activeTab)?.label}</h1><p className="mt-1.5 max-w-[65ch] text-sm leading-5 text-muted-foreground">{adminTabDescriptions[activeTab]}</p></div><button type="button" onClick={() => void refreshPage()} className="secondary-action inline-flex h-11 w-fit shrink-0 items-center gap-2 rounded-lg border border-input bg-white px-3.5 text-sm font-semibold text-ink-mid hover:bg-surface-subtle"><RefreshCw size={15}/>Atualizar dados</button></div>}
+  return <div key={activeTab} className={`admin-panel-enter admin-page-shell admin-page-${activeTab}`}>
+    {activeTab !== "data-crazy" && activeTab !== "referrals" && <header className="page-heading admin-page-hero"><div><span className="admin-page-eyebrow"><span className="admin-page-eyebrow-mark"/>CENTRAL DE ADMINISTRAÇÃO</span><h1>{adminTabs.find((tab) => tab.id === activeTab)?.label}</h1><p>{adminTabDescriptions[activeTab]}</p></div><button type="button" onClick={() => void refreshPage()} className="admin-page-refresh"><RefreshCw size={15}/>Atualizar dados</button></header>}
     {activeTab === "dashboard" && <AdminHome overview={overview} onTab={onTab}/>}
     {activeTab === "referrals" && <AdminReferralsPanel key={`${dataVersion}:${refreshVersion}`} influencers={overview.influencers}/>}
     {activeTab === "data-crazy" && <DataCrazySyncPanel overview={overview} refresh={refreshPage} refreshVersion={refreshVersion} onTab={onTab}/>}
@@ -699,8 +699,8 @@ function DataCrazySyncPanel({ overview, refresh, refreshVersion, onTab }: { over
   );
 
   return <div className="dc-workspace">
-    <section className="dc-page-heading" aria-labelledby="dc-page-title">
-      <div className="dc-page-copy"><h1 id="dc-page-title">Data Crazy</h1><p>Acompanhe o cruzamento com a Performance e revise as atividades registradas.</p></div>
+    <section className="dc-page-heading admin-page-hero" aria-labelledby="dc-page-title">
+      <div className="dc-page-copy"><span className="admin-page-eyebrow"><span className="admin-page-eyebrow-mark"/>CENTRAL DE ADMINISTRAÇÃO</span><h1 id="dc-page-title">Data Crazy</h1><p>Acompanhe o cruzamento com a Performance e revise as atividades registradas.</p></div>
       <AlertDialog>
         <AlertDialogTrigger asChild>
           <button type="button" disabled={loading || starting || run?.status === "running"} className="dc-sync-button">{starting ? <LoaderCircle size={16} className="animate-spin"/> : <RefreshCw size={16}/>}Sincronizar agora</button>
@@ -1069,7 +1069,7 @@ function ImportHistoryPanel() {
         const progress = item.expected_rows > 0 ? Math.min(100, Math.round(item.staged_rows / item.expected_rows * 100)) : 0;
         const open = openBatch === item.id;
         const badgeClass = item.status === "completed" ? "bg-status-success-surface text-brand-strong" : item.status === "staging" ? "bg-[#fff8e8] text-[#8a6532]" : item.status === "failed" ? "bg-status-danger-surface text-status-danger" : "bg-[#f0f3f7] text-[#64758a]";
-        return <article key={item.id} className="overflow-hidden portal-panel">
+        return <article key={item.id} className="admin-import-card overflow-hidden portal-panel">
           <div className="p-4 sm:p-5">
             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
               <div className="flex min-w-0 items-start gap-3"><div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand-strong"><FileSpreadsheet size={17}/></div><div className="min-w-0"><div className="break-all text-sm font-bold text-heading">{item.file_name}</div><div className="mt-1 text-xs text-muted-foreground">{item.kind === "data_crazy" ? "Data Crazy" : "Performance"} · por <span className="font-semibold text-ink-mid">{importActorLabel(item)}</span></div></div></div>
@@ -1179,8 +1179,8 @@ function ReviewsPanel({ overview, refresh }: { overview: AdminOverview; refresh:
     <div className="border-b border-border-subtle px-4 py-5 sm:px-6"><h2 className="text-base font-semibold">Atribuições para revisar</h2><p className="mt-1 text-sm text-muted-foreground">Escolha o responsável pelos indicados que aparecem em mais de uma pipeline.</p></div>
     {error && <p role="alert" className="m-4 form-error">{error}</p>}
     {notice && <p role="status" className="mx-4 mt-4 rounded-lg bg-status-success-surface px-3.5 py-3 text-sm text-status-success">{notice}</p>}
-    {reviews.length + unidentifiedReviews.length === 0 ? <EmptyState title="Tudo revisado" detail="Não há atribuições pendentes neste momento."/> : <div className="divide-y divide-[#e6ebf2]">{[...reviews, ...unidentifiedReviews].map((review) => <div key={review.id} className="grid gap-3 px-4 py-4 sm:grid-cols-[1fr_1fr_auto] sm:items-center sm:px-6">
-      <div><div className="text-sm font-semibold">{review.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-muted-foreground">{review.lead_id ? `ID do lead · ${review.lead_id}` : `UUID · ${review.uuid}`}</div>{review.region && <div className="mt-1 text-xs text-muted-foreground">{review.region}</div>}</div>
+    {reviews.length + unidentifiedReviews.length === 0 ? <EmptyState title="Tudo revisado" detail="Não há atribuições pendentes neste momento."/> : <div className="admin-review-list divide-y divide-border-subtle">{[...reviews, ...unidentifiedReviews].map((review) => <div key={review.id} className="admin-review-row grid gap-3 px-4 py-4 sm:grid-cols-[1fr_1fr_auto] sm:items-center sm:px-6">
+      <div className="admin-review-identity"><div className="admin-review-name">{review.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-muted-foreground">{review.lead_id ? `ID do lead · ${review.lead_id}` : `UUID · ${review.uuid}`}</div>{review.region && <div className="mt-1 text-xs text-muted-foreground">{review.region}</div>}</div>
       <div className="rounded-lg bg-status-warning-surface px-3 py-2 text-sm text-status-warning">Recebido: <strong>{review.raw_influencer || "vazio"}</strong></div>
       <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
         <select aria-label={`Atribuir ${review.name || review.lead_id || review.uuid}`} value={selectionByReview[review.id] ?? ""} onChange={(event) => { setNotice(""); setSelectionByReview((current) => ({ ...current, [review.id]: event.target.value })); }} disabled={busyId === review.id} className="h-11 min-w-0 rounded-lg border border-input bg-white px-3 text-sm font-semibold text-ink-strong"><option value="">Selecionar influenciador</option>{overview.influencers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>

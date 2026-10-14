@@ -753,3 +753,175 @@ html[data-theme="dark"] .login-context .brand-name span { color: var(--dark-ink)
 html[data-theme="dark"] .login-context .brand-description,
 html[data-theme="dark"] .login-context-copy p,
 html[data-theme="dark"] .login-footer { color: var(--dark-muted-ink); }
+
+/* Shared admin workspace: extend the refined referrals language across tabs. */
+.admin-page-shell {
+  min-width: 0;
+  animation: admin-workspace-enter .36s cubic-bezier(.22, 1, .36, 1) both;
+}
+.admin-page-shell:not(.admin-page-data-crazy):not(.admin-page-referrals) {
+  display: grid;
+  gap: 1.15rem;
+}
+.admin-page-shell > .page-heading { margin: 0; }
+.admin-page-shell .admin-page-hero {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  min-height: 9.2rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.25rem;
+  overflow: hidden;
+  border: 1px solid #174b81;
+  border-radius: 1.1rem;
+  padding: clamp(1.4rem, 3vw, 2.15rem);
+  background: linear-gradient(113deg, #0e2b4b 0%, #104577 65%, #1463a3 100%);
+  box-shadow: 0 14px 28px -22px #092c4f9c;
+  color: #fff;
+}
+.admin-page-shell .admin-page-hero::after {
+  position: absolute;
+  z-index: -1;
+  top: -11rem;
+  right: -7rem;
+  width: 38rem;
+  height: 25rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, #54abfa30, #54abfa08 52%, transparent 70%);
+  content: "";
+  pointer-events: none;
+}
+.admin-page-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: .55rem;
+  color: #b5daf9;
+  font-size: .65rem;
+  font-weight: 800;
+  letter-spacing: .145em;
+}
+.admin-page-eyebrow-mark {
+  width: .45rem;
+  height: .45rem;
+  border-radius: 50%;
+  background: #67d6b8;
+  box-shadow: 0 0 0 .23rem #67d6b824;
+}
+.admin-page-shell .admin-page-hero h1,
+.admin-page-shell .admin-page-hero .dc-page-copy h1 {
+  margin-top: .65rem;
+  color: #fff;
+  font-size: clamp(1.9rem, 3.2vw, 2.65rem);
+  font-weight: 780;
+  letter-spacing: -.05em;
+  line-height: 1.05;
+}
+.admin-page-shell .admin-page-hero p,
+.admin-page-shell .admin-page-hero .dc-page-copy p {
+  max-width: 58ch;
+  margin-top: .55rem;
+  color: #d1e4f6;
+  font-size: .86rem;
+  line-height: 1.55;
+}
+.admin-page-refresh,
+.admin-page-shell .admin-page-hero .dc-sync-button {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  min-height: 2.75rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: .55rem;
+  border: 1px solid #ffffff5e;
+  border-radius: .65rem;
+  padding: .5rem .9rem;
+  background: #ffffff12;
+  color: #fff;
+  font-size: .78rem;
+  font-weight: 700;
+  box-shadow: none;
+  transition: background .2s ease, border-color .2s ease, transform .2s ease;
+}
+.admin-page-refresh:hover,
+.admin-page-shell .admin-page-hero .dc-sync-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: #ffffffa6;
+  background: #ffffff24;
+  box-shadow: none;
+}
+.admin-page-shell .admin-page-hero :focus-visible { outline: 3px solid #d4edff; outline-offset: 3px; }
+.admin-page-shell .portal-panel,
+.admin-page-shell .admin-action-board {
+  border-color: var(--border);
+  border-radius: .95rem;
+  background-color: var(--card);
+  box-shadow: 0 12px 28px -27px #123d6880;
+}
+.admin-page-shell .portal-panel h2,
+.admin-page-shell .admin-action-board h2 { letter-spacing: -.025em; }
+.admin-page-shell .portal-panel input:not([type="file"]),
+.admin-page-shell .portal-panel select,
+.admin-page-shell .portal-panel textarea {
+  border-radius: .65rem;
+  transition: border-color .18s ease, box-shadow .18s ease, background-color .18s ease;
+}
+.admin-page-shell .portal-panel input:not([type="file"]):focus,
+.admin-page-shell .portal-panel select:focus,
+.admin-page-shell .portal-panel textarea:focus {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px var(--focus-surface);
+}
+.admin-page-dashboard { gap: 1.15rem; }
+.admin-page-dashboard .admin-summary-grid,
+.admin-page-dashboard > section.mt-6 { margin-top: 0; }
+.admin-page-data-crazy .dc-workspace { margin-top: 0; }
+.admin-page-shell .dc-source-card { transition: background-color .18s ease; }
+.admin-page-shell .dc-source-card:hover { background: var(--surface-subtle); }
+.admin-page-shell .dc-event-row { transition: background-color .18s ease; }
+.admin-page-shell .dc-timeline-panel,
+.admin-page-shell .dc-crossmatch-panel { border-radius: .95rem; box-shadow: 0 12px 28px -27px #123d6880; }
+.admin-page-shell .load-more { min-height: 3.25rem; transition: background-color .18s ease, color .18s ease; }
+.admin-page-shell .load-more:focus-visible,
+.admin-page-shell button:focus-visible,
+.admin-page-shell select:focus-visible,
+.admin-page-shell input:focus-visible { outline-color: var(--ring); outline-offset: 2px; }
+.admin-page-accounts > .grid > section:nth-child(2) {
+  border-color: var(--border);
+  border-radius: .95rem;
+  background: var(--card);
+  box-shadow: 0 12px 28px -27px #123d6880;
+}
+.admin-review-row { transition: background-color .18s ease, box-shadow .18s ease; }
+.admin-review-row:hover { background: var(--surface-subtle); box-shadow: inset 3px 0 0 var(--brand-strong); }
+.admin-review-name { color: var(--heading); font-size: .92rem; font-weight: 760; letter-spacing: -.015em; }
+.admin-review-identity { min-width: 0; }
+.admin-import-card { transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.admin-import-card:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--brand-strong) 25%, var(--border)); box-shadow: 0 14px 28px -24px #123d6880; }
+@keyframes admin-workspace-enter {
+  from { opacity: .7; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 639px) {
+  .admin-page-shell .admin-page-hero { min-height: 0; flex-direction: column; gap: 1rem; padding: 1.25rem; }
+  .admin-page-shell .admin-page-hero h1,
+  .admin-page-shell .admin-page-hero .dc-page-copy h1 { font-size: 2rem; }
+  .admin-page-shell .admin-page-hero p,
+  .admin-page-shell .admin-page-hero .dc-page-copy p { font-size: .8rem; }
+  .admin-page-refresh,
+  .admin-page-shell .admin-page-hero .dc-sync-button { min-height: 2.65rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-page-shell { animation: none; }
+  .admin-page-shell .portal-panel input:not([type="file"]),
+  .admin-page-shell .portal-panel select,
+  .admin-page-shell .portal-panel textarea,
+  .admin-page-shell .dc-source-card,
+  .admin-page-shell .dc-event-row,
+  .admin-page-shell .load-more,
+  .admin-page-refresh,
+  .admin-page-shell .admin-page-hero .dc-sync-button { transition: none; }
+  .admin-import-card:hover { transform: none; }
+}
