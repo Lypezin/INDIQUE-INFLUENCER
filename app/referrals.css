@@ -83,11 +83,11 @@
 .admin-referral-message.is-error { background: var(--status-danger-surface); color: var(--status-danger); }
 .admin-referral-message.is-success { background: var(--status-success-surface); color: var(--status-success); }
 .admin-referral-load { display: flex; min-height: 14rem; align-items: center; justify-content: center; gap: .65rem; color: var(--muted-foreground); font-size: .875rem; }
-.admin-referral-list-head, .admin-referral-row-main { display: grid; grid-template-columns: minmax(12rem, 1.8fr) minmax(8rem, 1fr) minmax(9rem, 1fr) minmax(6.7rem, .7fr) minmax(9rem, .9fr); align-items: center; column-gap: .8rem; }
+.admin-referral-list-head, .admin-referral-row-main { display: grid; grid-template-columns: minmax(14rem, 1.7fr) minmax(9rem, 1.05fr) minmax(12rem, 1.5fr) minmax(7rem, .65fr) minmax(10rem, .9fr); align-items: center; column-gap: clamp(.8rem, 1.4vw, 1.5rem); }
 .admin-referral-list-head { min-height: 2.7rem; padding: .45rem 1.45rem; color: var(--muted-foreground); font-size: .62rem; font-weight: 790; letter-spacing: .09em; text-transform: uppercase; }
 .admin-referral-row { border-top: 1px solid var(--border-subtle); background: var(--card); transition: background .18s ease, box-shadow .18s ease; }
 .admin-referral-row:hover, .admin-referral-row.is-expanded { background: var(--surface-subtle); box-shadow: inset 3px 0 0 var(--brand-strong); }
-.admin-referral-row-main { min-height: 7.2rem; padding: .85rem 1.45rem; }
+.admin-referral-row-main { min-height: 7.2rem; padding: 1rem 1.45rem; }
 .admin-referral-identity { display: flex; min-width: 0; align-items: center; gap: .8rem; }
 .admin-referral-avatar { display: grid; width: 2.55rem; height: 2.55rem; flex: 0 0 auto; place-items: center; border: 1px solid var(--border); border-radius: .7rem; background: var(--brand-soft); color: var(--brand-strong); font-size: .73rem; font-weight: 800; letter-spacing: .02em; }
 .admin-referral-identity-copy, .admin-referral-owner, .admin-referral-progress, .admin-referral-prize { display: grid; min-width: 0; align-content: center; justify-items: start; gap: .32rem; }
@@ -100,12 +100,14 @@
 .admin-referral-column-label { display: none; color: var(--muted-foreground); font-size: .62rem; font-weight: 760; letter-spacing: .065em; text-transform: uppercase; }
 .admin-referral-owner > strong { max-width: 100%; overflow-wrap: anywhere; color: var(--ink-strong); font-size: .79rem; font-weight: 680; line-height: 1.3; }
 .admin-referral-manual { color: var(--muted-foreground); font-size: .68rem; }
-.admin-referral-progress { gap: .4rem; }
-.admin-referral-progress-numbers { display: flex; align-items: baseline; gap: .3rem; font-variant-numeric: tabular-nums; }
+.admin-referral-progress { width: 100%; gap: .4rem; }
+.admin-referral-progress-numbers { display: flex; width: 100%; align-items: baseline; gap: .3rem; font-variant-numeric: tabular-nums; }
 .admin-referral-progress-numbers strong { color: var(--heading); font-size: .94rem; font-weight: 780; }
 .admin-referral-progress-numbers span { color: var(--muted-foreground); font-size: .72rem; }
-.admin-referral-progress .route-meter { width: 100%; max-width: 11.5rem; }
-.admin-referral-progress .route-meter-fill { transition: transform .6s cubic-bezier(.22, 1, .36, 1); }
+.admin-referral-progress-numbers .admin-referral-progress-percent { margin-left: auto; color: var(--brand-strong); font-weight: 780; }
+.admin-referral-progress .route-meter { width: 100%; height: .5rem; overflow: hidden; border-radius: 999px; }
+.admin-referral-progress .route-meter-fill { position: relative; height: 100%; overflow: hidden; border-radius: inherit; transition: width .65s cubic-bezier(.22, 1, .36, 1); }
+.admin-referral-progress .route-meter.is-active .route-meter-fill::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 0%, #ffffff08 35%, #ffffff70 50%, #ffffff08 65%, transparent 100%); animation: referral-meter-flow 2.8s linear infinite; }
 .admin-referral-progress-note { color: var(--muted-foreground); font-size: .69rem; line-height: 1.25; }
 .admin-referral-prize > strong { color: var(--heading); font-size: .83rem; font-variant-numeric: tabular-nums; font-weight: 760; white-space: nowrap; }
 .admin-referral-pill { display: inline-flex; align-items: center; min-height: 1.5rem; padding: .17rem .55rem; border-radius: 999px; font-size: .65rem; font-weight: 750; white-space: nowrap; }
@@ -121,6 +123,7 @@
 .admin-referral-reopen:hover { background: var(--brand-soft); }
 .admin-referral-expand { padding: .4rem .3rem; color: var(--brand-strong); }
 .admin-referral-expand:hover { background: var(--brand-soft); }
+.admin-referral-expand:focus-visible, .admin-referral-pay:focus-visible, .admin-referral-reopen:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .admin-referral-expand svg { transition: transform .2s ease; }
 .admin-referral-row.is-expanded .admin-referral-expand svg { transform: rotate(180deg); }
 .admin-referral-details { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(15rem, .8fr); gap: 1.5rem; padding: 1.25rem 1.45rem 1.45rem; border-top: 1px solid var(--border-subtle); background: var(--surface-subtle); animation: referral-reveal .24s cubic-bezier(.22, 1, .36, 1) both; }
@@ -139,6 +142,7 @@
 .admin-referral-footer button:hover:not(:disabled) { background: var(--surface-subtle); }
 @keyframes referral-enter { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes referral-reveal { from { opacity: .45; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes referral-meter-flow { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
 
 @media (max-width: 1249px) {
   .admin-referral-list-head { display: none; }
@@ -192,7 +196,7 @@ html[data-theme="dark"] .admin-referral-status { --status-surface: var(--dark-ac
 html[data-theme="dark"] .admin-referral-status.is-active { background: var(--status-surface); }
 html[data-theme="dark"] .admin-referral-hero-signal { background: #0b2847; }
 @media (prefers-reduced-motion: reduce) {
-  .admin-referral-workspace, .admin-referral-details { animation: none; }
+  .admin-referral-workspace, .admin-referral-details, .admin-referral-progress .route-meter-fill::after { animation: none; }
   .admin-referral-refresh, .admin-referral-hero-signal button, .admin-referral-status, .admin-referral-status::before, .admin-referral-row, .admin-referral-row-actions button, .admin-referral-expand svg, .admin-referral-progress .route-meter-fill { transition: none; }
   .admin-referral-refresh:hover:not(:disabled), .admin-referral-hero-signal button:hover, .admin-referral-status:hover, .admin-referral-row-actions button:hover:not(:disabled) { transform: none; }
 }

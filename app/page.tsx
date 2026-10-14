@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent, type FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
-  ArrowDownUp, ArrowRight, ArrowRightLeft, Award, BarChart3, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
+  ArrowDownUp, ArrowRight, Award, BarChart3, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   CircleAlert, ClipboardList, CloudUpload, Download, Eye, EyeOff, FileSpreadsheet,
   CalendarDays, Gift, History, LoaderCircle, LogOut, Mail, MapPin, Menu, Moon, RefreshCw, RotateCcw, Search, ShieldCheck, Sun, UserRound, Users, XCircle,
 } from "lucide-react";
@@ -116,7 +116,7 @@ const adminTabs: { id: TabId; label: string; icon: typeof BarChart3 }[] = [
 
 const adminTabDescriptions: Record<TabId, string> = {
   dashboard: "Acompanhe a base, as corridas e o que precisa de atenção.",
-  referrals: "Acompanhe o progresso, transfira responsáveis e controle pagamentos.",
+  referrals: "Acompanhe corridas e controle pagamentos.",
   "data-crazy": "Base de entregadores, corridas e movimentações registradas.",
   performance: "Some novas corridas ao histórico e acompanhe a cobertura dos dados.",
   reviews: "Resolva entregadores sem atribuição clara.",
@@ -383,7 +383,7 @@ export default function Home() {
               <div className="grid gap-1 sm:grid-cols-2">{visibleTabs.map((tab) => <NavButton key={tab.id} tab={tab} active={activeTab === tab.id} onClick={() => { selectTab(tab.id); closeMobileMenu(); }} />)}</div>
             </nav>
           </div>}
-          <div className="mx-auto max-w-[1320px] px-4 pb-12 pt-7 sm:px-8 sm:pt-9 lg:px-10">
+          <div className={`mx-auto w-full px-4 pb-12 pt-7 sm:px-8 sm:pt-9 lg:px-10 ${isAdmin && activeTab === "referrals" ? "max-w-[1800px]" : "max-w-[1320px]"}`}>
             {loadError && <div className="mb-5 flex items-start gap-3 rounded-xl border border-[#f2d8bd] bg-[#fffaf4] p-4 text-sm text-[#84572f]"><CircleAlert size={18} className="mt-0.5 shrink-0" />{loadError}</div>}
             {!isAdmin ? <InfluencerDashboard referrals={referrals} influencer={influencer} lastImportAt={lastImportAt} search={search} setSearch={setSearch} onlyUnlocked={onlyUnlocked} setOnlyUnlocked={setOnlyUnlocked} /> : (
               <AdminDashboard activeTab={activeTab} overview={overview} profile={profile} refresh={refreshAdmin} dataVersion={workspaceDataRevision} onTab={selectTab} onAdminNameSaved={updateProfileDisplayName} />
@@ -1396,25 +1396,6 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
     setActionNotice("");
   }
 
-  async function performAssignment(item: AdminReferral, influencerId: string | null) {
-    const referralId = adminReferralKey(item);
-    setPendingReferralId(referralId);
-    setActionError("");
-    setActionNotice("");
-    try {
-      await callAdminApi("referral-assignment", { uuid: item.uuid, leadId: item.lead_id, influencerId });
-      const targetName = influencers.find((item) => item.id === influencerId)?.name
-        ?? influencers.find((candidate) => candidate.id === item.pipeline_influencer_id)?.name
-        ?? "a atribuição da Data Crazy";
-      setActionNotice("Indicado transferido para " + targetName + ".");
-      setRefreshKey((value) => value + 1);
-    } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : "Não foi possível transferir o indicado.");
-    } finally {
-      setPendingReferralId(null);
-    }
-  }
-
   async function performPaymentAction() {
     if (!confirmation) return;
     const { uuid, action } = confirmation;
@@ -1511,7 +1492,7 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
         : result ? <>
           <div className="admin-referral-list-head" aria-hidden="true"><span>Entregador</span><span>Responsável</span><span>Corridas</span><span>Prêmio</span><span>Ação</span></div>
           <div className="admin-referral-list" aria-busy={loading}>
-            {result.items.map((item) => <AdminReferralRow key={item.referral_id} item={item} influencers={influencers} busy={pendingReferralId === adminReferralKey(item)} onAssign={performAssignment} onRequestConfirm={setConfirmation}/>)}
+            {result.items.map((item) => <AdminReferralRow key={item.referral_id} item={item} busy={pendingReferralId === adminReferralKey(item)} onRequestConfirm={setConfirmation}/>)}
           </div>
           <div className="admin-referral-footer"><span>{loading ? "Atualizando… · " : ""}{fmtNumber(firstItem)}–{fmtNumber(lastItem)} de {fmtNumber(result.total)} indicados</span><div><button type="button" onClick={() => setPage((value) => Math.max(0, value - 1))} disabled={page === 0 || loading}>Anterior</button><button type="button" onClick={() => setPage((value) => value + 1)} disabled={(page + 1) * pageSize >= result.total || loading}>Próxima</button></div></div>
         </> : null}
@@ -1538,9 +1519,8 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
   </div>;
 }
 
-function AdminReferralRow({ item, influencers, busy, onAssign, onRequestConfirm }: {
-  item: AdminReferral; influencers: Influencer[]; busy: boolean;
-  onAssign: (item: AdminReferral, influencerId: string | null) => void;
+function AdminReferralRow({ item, busy, onRequestConfirm }: {
+  item: AdminReferral; busy: boolean;
   onRequestConfirm: (confirmation: { uuid: string; action: "paid" | "reopen" } | null) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -1560,7 +1540,7 @@ function AdminReferralRow({ item, influencers, busy, onAssign, onRequestConfirm 
         </div>
       </div>
       <div className="admin-referral-owner"><span className="admin-referral-column-label">Responsável</span><strong>{item.influencer_name}</strong>{item.assignment_overridden && <span className="admin-referral-manual">Transferência manual</span>}</div>
-      <div className="admin-referral-progress"><span className="admin-referral-column-label">Corridas</span><div className="admin-referral-progress-numbers"><strong>{fmtNumber(Number(item.routes))}</strong><span>de {fmtNumber(item.route_goal)}</span></div><div className="route-meter" role="progressbar" aria-label={`Progresso de ${item.name || "entregador"}`} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-valuetext={`${fmtNumber(Number(item.routes))} de ${fmtNumber(item.route_goal)} corridas`}><div className="route-meter-fill" style={{ transform: `scaleX(${progress / 100})` }}/></div><span className="admin-referral-progress-note">{item.reward_status === "progress" ? `Faltam ${fmtNumber(item.routes_remaining)} corridas` : "Meta atingida"}</span></div>
+      <div className="admin-referral-progress"><span className="admin-referral-column-label">Corridas</span><div className="admin-referral-progress-numbers"><strong>{fmtNumber(Number(item.routes))}</strong><span>de {fmtNumber(item.route_goal)}</span><span className="admin-referral-progress-percent">{progress}%</span></div><div className={`route-meter ${item.reward_status === "progress" ? "is-active" : ""}`} role="progressbar" aria-label={`Progresso de ${item.name || "entregador"}`} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-valuetext={`${fmtNumber(Number(item.routes))} de ${fmtNumber(item.route_goal)} corridas`}><div className="route-meter-fill" style={{ width: `${progress}%` }}/></div><span className="admin-referral-progress-note">{item.reward_status === "progress" ? `Faltam ${fmtNumber(item.routes_remaining)} corridas` : "Meta atingida"}</span></div>
       <div className="admin-referral-prize"><span className="admin-referral-column-label">Prêmio</span><strong>{fmtMoney(paidAmount)}</strong><span className={`admin-referral-pill is-${item.reward_status}`}>{statusText}</span></div>
       <div className="admin-referral-row-actions">
         {item.reward_status === "to_pay" && item.uuid && <button type="button" className="admin-referral-pay" onClick={() => onRequestConfirm({ uuid: item.uuid!, action: "paid" })} disabled={busy}><Check size={15}/>Registrar pagamento</button>}
@@ -1568,7 +1548,7 @@ function AdminReferralRow({ item, influencers, busy, onAssign, onRequestConfirm 
         <button type="button" className="admin-referral-expand" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={detailsId}><span>{expanded ? "Ocultar detalhes" : "Ver detalhes"}</span><ChevronDown size={17}/></button>
       </div>
     </div>
-    <div id={detailsId} className={`admin-referral-details ${item.reward_status === "progress" && !item.recent_events?.length ? "is-facts-only" : ""}`} hidden={!expanded}>
+    <div id={detailsId} className={`admin-referral-details ${!item.recent_events?.length ? "is-facts-only" : ""}`} hidden={!expanded}>
       {expanded && <>
       <div className="admin-referral-facts">
         <div><span>Identificador</span><strong className="break-all">{item.uuid ? `UUID · ${item.uuid}` : `ID do lead · ${item.lead_id || "indisponível"}`}</strong></div>
@@ -1577,36 +1557,10 @@ function AdminReferralRow({ item, influencers, busy, onAssign, onRequestConfirm 
         <div><span>CPF</span><strong>{item.cpf || "Indisponível"}</strong></div>
         {item.reward_status === "paid" && <div><span>Pagamento</span><strong>{fmtDate(item.paid_at)}{item.paid_influencer_name ? ` · ${item.paid_influencer_name}` : ""}</strong></div>}
       </div>
-      {(item.reward_status !== "progress" || Boolean(item.recent_events?.length)) && <div className="admin-referral-management">{item.reward_status !== "progress" && <><h3>Responsável pela indicação</h3><AdminReferralActions key={adminReferralKey(item) + ":" + item.influencer_id} item={item} influencers={influencers} busy={busy} onAssign={onAssign}/></>}<AdminReferralHistory item={item}/></div>}
+      {Boolean(item.recent_events?.length) && <div className="admin-referral-management"><AdminReferralHistory item={item}/></div>}
       </>}
     </div>
   </article>;
-}
-
-function AdminReferralActions({ item, influencers, busy, onAssign }: {
-  item: AdminReferral; influencers: Influencer[]; busy: boolean;
-  onAssign: (item: AdminReferral, influencerId: string | null) => void;
-}) {
-  const [destination, setDestination] = useState(item.influencer_id);
-
-  const returningToPipeline = destination === "__pipeline__";
-  const targetId = returningToPipeline ? item.pipeline_influencer_id : destination;
-  const assignmentChanged = targetId !== item.influencer_id;
-  const shouldClearOverride = returningToPipeline || targetId === item.pipeline_influencer_id;
-
-  return <div className="mt-3 space-y-2.5">
-    <label className="block text-xs font-semibold text-muted-foreground">
-      Transferir para
-      <select aria-label={"Transferir " + (item.name || "entregador")} value={destination} onChange={(event) => setDestination(event.target.value)} disabled={busy} className="mt-1.5 h-11 w-full rounded-lg border border-input bg-card px-3 text-sm font-medium text-ink-strong focus:border-ring focus:outline-none focus:ring-2 focus:ring-focus-surface disabled:opacity-60">
-        {item.assignment_overridden && item.pipeline_influencer_id && <option value="__pipeline__">Atribuição Data Crazy · {item.pipeline_influencer_name}</option>}
-        {influencers.map((influencer) => <option key={influencer.id} value={influencer.id}>{influencer.name}</option>)}
-      </select>
-    </label>
-    <div className="flex flex-wrap gap-2">
-      <button type="button" onClick={() => onAssign(item, shouldClearOverride ? null : targetId)} disabled={busy || !assignmentChanged} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-input bg-card px-3 text-xs font-semibold text-ink-mid hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50"><ArrowRightLeft size={14}/>{busy ? "Salvando…" : "Transferir"}</button>
-    </div>
-    {item.assignment_overridden && <p className="text-xs leading-5 text-muted-foreground">Transferência manual. A próxima sincronização manterá este responsável.</p>}
-  </div>;
 }
 
 function AdminReferralHistory({ item }: { item: AdminReferral }) {
