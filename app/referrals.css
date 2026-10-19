@@ -75,6 +75,13 @@
 .admin-referral-id-filter { flex-basis: 12rem; }
 .admin-referral-owner-filter select, .admin-referral-id-filter select { width: 100%; height: 2.85rem; padding: 0 .75rem; border: 1px solid var(--input); border-radius: .6rem; background: var(--card); color: var(--foreground); font-size: .8rem; font-weight: 630; }
 .admin-referral-id-filter.is-active select { border-color: var(--ring); background: var(--brand-soft); color: var(--brand-strong); }
+.admin-referral-release-filter { display: grid; min-width: 18rem; flex: 1 1 19rem; gap: .35rem; color: var(--ink-mid); font-size: .68rem; font-weight: 740; }
+.admin-referral-release-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .5rem; }
+.admin-referral-release-pair label { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .4rem; }
+.admin-referral-release-pair label > span { color: var(--muted-foreground); font-size: .66rem; font-weight: 700; }
+.admin-referral-release-pair input { width: 100%; min-width: 0; height: 2.85rem; padding: 0 .55rem; border: 1px solid var(--input); border-radius: .6rem; background: var(--card); color: var(--foreground); font-size: .76rem; font-weight: 630; }
+.admin-referral-release-pair input:focus-visible { border-color: var(--ring); outline: 3px solid var(--focus-surface); outline-offset: 1px; }
+.admin-referral-release-filter.is-active input { border-color: var(--ring); background: var(--brand-soft); color: var(--brand-strong); }
 .admin-referral-clear { min-height: 2.85rem; flex: 0 0 auto; padding: 0 .2rem; color: var(--brand-strong); font-size: .74rem; font-weight: 740; text-decoration: underline; text-underline-offset: .2rem; }
 .admin-referral-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .65rem 1.2rem; padding: .8rem 1.45rem; border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle); background: var(--surface-subtle); }
 .admin-referral-summary-lead { display: flex; align-items: baseline; gap: .7rem; }
@@ -166,6 +173,7 @@
   .admin-referral-hero-signal { position: static; margin-top: 1.35rem; }
   .admin-referral-toolbar { flex-wrap: wrap; }
   .admin-referral-owner-filter, .admin-referral-id-filter { flex: 1 1 13rem; }
+  .admin-referral-release-filter { flex: 1 1 100%; }
   .admin-referral-summary-facts { width: 100%; }
   .admin-referral-row-main { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: "identity identity" "progress prize" "owner actions"; gap: .95rem; min-height: 0; }
   .admin-referral-row-actions { justify-content: flex-end; }
