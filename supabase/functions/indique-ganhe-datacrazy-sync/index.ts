@@ -26,6 +26,14 @@ const PIPELINES: Record<string, { influencerId: string; normalizedName: string }
   "c872fd90-988e-4377-87cb-04e13f2d849b": { influencerId: "sassa", normalizedName: "sassa" },
   "58d4bdbb-2804-4d8f-a90d-5de3114e5249": { influencerId: "thais", normalizedName: "thais" },
 };
+// These newer pipelines are resolved by exact normalized name in the
+// Influencers group. This avoids baking Data Crazy's internal IDs into the
+// application while still failing closed if a name is missing or duplicated.
+const ADDITIONAL_PIPELINES = [
+  { influencerId: "zoio-motoboy", pipelineName: "Zoio motoboy", normalizedName: "zoiomotoboy" },
+  { influencerId: "tropa-do-bate-lata", pipelineName: "Tropa do bate lata", normalizedName: "tropadobatelata" },
+  { influencerId: "matheus", pipelineName: "MATHEUS", normalizedName: "matheus" },
+] as const;
 
 type SyncAction = "start" | "status" | "cron-start" | "advance";
 type Body = { action?: unknown; runId?: unknown };
@@ -266,7 +274,7 @@ function extraValue(field: JsonObject | undefined): unknown {
   return null;
 }
 
-function businessRow(value: unknown): JsonObject | null {
+function businessRow(value: unknown, pipelines: Record<string, { influencerId: string; normalizedName: string }>): JsonObject | null {
   const business = object(value);
   if (!business) return null;
   const businessId = sourceId(business.id);
@@ -274,7 +282,7 @@ function businessRow(value: unknown): JsonObject | null {
   const stage = object(business.stage);
   const pipeline = object(stage?.pipeline) ?? object(business.pipeline);
   const pipelineId = text(pipeline?.id ?? stage?.pipelineId ?? business.pipelineId).toLowerCase();
-  const influencerId = PIPELINES[pipelineId]?.influencerId;
+  const influencerId = pipelines[pipelineId]?.influencerId;
   const pipelineName = text(pipeline?.name ?? stage?.pipelineName ?? business.pipelineName);
   const stageId = text(stage?.id ?? business.stageId).toLowerCase();
   return businessId && leadId && influencerId
@@ -391,9 +399,10 @@ async function apiGet(env: Env, route: "pipelines" | "businesses" | "leads", par
   throw new SyncError("A API Data Crazy está indisponível.", true, 503, 60);
 }
 
-async function checkPipelines(env: Env): Promise<void> {
+async function checkPipelines(env: Env): Promise<Record<string, { influencerId: string; normalizedName: string }>> {
   const { data } = await apiGet(env, "pipelines");
   const seen = new Set<string>();
+  const resolved = { ...PIPELINES };
   for (const value of data) {
     const pipeline = object(value);
     const id = text(pipeline?.id).toLowerCase();
@@ -409,6 +418,30 @@ async function checkPipelines(env: Env): Promise<void> {
   if (seen.size !== Object.keys(PIPELINES).length) {
     throw new SyncError("Uma ou mais pipelines de influenciadores não foram encontradas. A lista atual foi preservada.", false);
   }
+
+  for (const expected of ADDITIONAL_PIPELINES) {
+    const namedPipelines = data.map(object).filter((pipeline): pipeline is JsonObject =>
+      pipeline !== null && normalized(pipeline.name) === expected.normalizedName,
+    );
+    const matches = namedPipelines.filter((pipeline) => {
+      const group = object(pipeline.group);
+      return normalized(group?.name ?? pipeline.group) === "influencers";
+    });
+    if (matches.length !== 1) {
+      throw new SyncError(`A pipeline “${expected.pipelineName}” não foi encontrada de forma única no grupo Influencers. A lista atual foi preservada.`, false);
+    }
+    const pipeline = matches[0];
+    const pipelineId = text(pipeline.id).toLowerCase();
+    if (!pipelineId) {
+      throw new SyncError(`A pipeline “${expected.pipelineName}” não possui ID válido. A lista atual foi preservada.`, false);
+    }
+    const existing = resolved[pipelineId];
+    if (existing && existing.influencerId !== expected.influencerId) {
+      throw new SyncError("Duas pipelines estão configuradas para o mesmo influenciador. A lista atual foi preservada.", false);
+    }
+    resolved[pipelineId] = expected;
+  }
+  return resolved;
 }
 
 async function checkDateCoverage(env: Env): Promise<void> {
@@ -498,7 +531,7 @@ async function work(service: SupabaseClient, env: Env, runId?: string, maxPages 
   const claim = toClaim(claimResult.data);
   if (!claim) return status(service, runId);
   try {
-    await checkPipelines(env);
+    const pipelines = await checkPipelines(env);
     await checkDateCoverage(env);
     let published = false;
     let pauseSeconds = 1;
@@ -535,7 +568,7 @@ async function work(service: SupabaseClient, env: Env, runId?: string, maxPages 
       if (!done && nextCursor >= 10_000) {
         throw new SyncError("Um mês atingiu o limite de paginação da Data Crazy. A lista atual foi preservada.", false);
       }
-      const rows = source.data.map(phase === "businesses" ? businessRow : leadRow).filter(Boolean);
+      const rows = source.data.map((row) => phase === "businesses" ? businessRow(row, pipelines) : leadRow(row)).filter(Boolean);
       const next = object(rpcData(
         await service.schema(DATA_SCHEMA).rpc("append_data_crazy_sync_page", {
           p_run_id: claim.runId,
