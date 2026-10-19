@@ -82,6 +82,17 @@ type Theme = "light" | "dark";
 
 const fmtMoney = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
 const fmtNumber = (number: number) => new Intl.NumberFormat("pt-BR").format(number);
+const exportPayeeDetails: Record<string, { name: string; cnpj: string }> = {
+  jaiminho: { name: "Douglas Eduardo da Silva", cnpj: "59.862.275/0001-87" },
+  jhowjhow: { name: "Johnny Anderson Santoro", cnpj: "44.633.409/0001-10" },
+  felipe: { name: "Felipe Lucas Nascimento Gomes", cnpj: "58.855.319/0001-89" },
+  "00-brocador": { name: "Ryan Araujo da Silva", cnpj: "58.853.312/0001-28" },
+  biel: { name: "GABRIEL NUNES LIMA", cnpj: "64.989.444/0001-84" },
+  vini: { name: "VINICIUS RODRIGUES DA COSTA", cnpj: "54.917.876/0001-26" },
+  gui: { name: "Guilherme", cnpj: "59.441.833/0001-30" },
+  sassa: { name: "WALLACE FELIPE DE ALMEIDA", cnpj: "44.396.659/0001-84" },
+};
+const messagePayoutInfluencers = new Set(["00-brocador", "jaiminho", "felipe", "jhowjhow"]);
 const fmtDate = (value: string | null) => {
   if (!value) return "Não informada";
   const dateOnly = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -1327,6 +1338,8 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
   const [actionNotice, setActionNotice] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
   const [pendingReferralId, setPendingReferralId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<{ uuid: string; action: "paid" | "reopen" } | null>(null);
 
@@ -1415,6 +1428,78 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
     }
   }
 
+  async function exportPaymentSummary() {
+    setExporting(true);
+    setExportError("");
+    try {
+      const exportPageSize = 100;
+      const query = { rewardStatus: "all", limit: exportPageSize, influencerId: "all", idFilter: "all", search: "" };
+      const firstPage = await callAdminApi<AdminReferralsResult>("admin-referrals", { ...query, offset: 0 });
+      const pages: AdminReferralsResult[] = [firstPage];
+      const offsets = Array.from({ length: Math.ceil(firstPage.total / exportPageSize) - 1 }, (_, index) => (index + 1) * exportPageSize);
+      for (let index = 0; index < offsets.length; index += 6) {
+        const nextPages = await Promise.all(offsets.slice(index, index + 6).map((offset) =>
+          callAdminApi<AdminReferralsResult>("admin-referrals", { ...query, offset }),
+        ));
+        pages.push(...nextPages);
+      }
+
+      const summary = new Map(influencers.filter((item) => !item.is_demo).map((item) => [item.id, {
+        influencer: item,
+        indicationCount: 0,
+        indicationCents: 0,
+        conversationCount: 0,
+      }]));
+      const seen = new Set<string>();
+      for (const item of pages.flatMap((pageResult) => pageResult.items)) {
+        if (seen.has(item.referral_id)) continue;
+        seen.add(item.referral_id);
+        const row = summary.get(item.influencer_id);
+        if (!row) continue;
+        if (item.is_unidentified) {
+          row.conversationCount += 1;
+        } else if (item.reward_status === "to_pay") {
+          row.indicationCount += 1;
+          row.indicationCents += item.prize_cents;
+        }
+      }
+
+      const columns = ["Influencer", "Nome", "CNPJ", "Quantidade (Indicações)", "Indicações", "Quantidade (Conversas)", "Conversas", "Total a pagar"];
+      const rows = [...summary.values()].map(({ influencer, indicationCount, indicationCents, conversationCount }) => {
+        const payee = exportPayeeDetails[influencer.id];
+        const conversationCents = messagePayoutInfluencers.has(influencer.id) ? conversationCount * 400 : 0;
+        return [
+          influencer.name,
+          payee?.name || influencer.name,
+          payee?.cnpj || "",
+          indicationCount,
+          indicationCents / 100,
+          conversationCount,
+          conversationCents / 100,
+          (indicationCents + conversationCents) / 100,
+        ];
+      });
+      const XLSX = await import("xlsx");
+      const worksheet = XLSX.utils.aoa_to_sheet([columns, ...rows]);
+      worksheet["!cols"] = [{ wch: 23 }, { wch: 34 }, { wch: 23 }, { wch: 25 }, { wch: 16 }, { wch: 25 }, { wch: 16 }, { wch: 18 }];
+      worksheet["!autofilter"] = { ref: `A1:H${rows.length + 1}` };
+      for (let row = 2; row <= rows.length + 1; row += 1) {
+        for (const column of ["E", "G", "H"]) {
+          const cell = worksheet[`${column}${row}`];
+          if (cell) cell.z = '"R$" #,##0.00';
+        }
+      }
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Resumo de pagamentos");
+      const exportDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+      XLSX.writeFile(workbook, `indicados-pagamentos-${exportDate}.xlsx`);
+    } catch (cause) {
+      setExportError(cause instanceof Error ? cause.message : "Não foi possível gerar a planilha.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const confirmationReferral = confirmation ? result?.items.find((item) => item.uuid === confirmation.uuid) : null;
 
   return <div className="admin-referral-workspace">
@@ -1425,9 +1510,14 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
           <h1>Indicados</h1>
           <p>Da primeira corrida ao prêmio: acompanhe cada indicação em um só lugar.</p>
         </div>
-        <button type="button" onClick={() => setRefreshKey((value) => value + 1)} disabled={loading} className="admin-referral-refresh">
-          <RefreshCw size={16} className={loading ? "animate-spin" : ""}/>{loading ? "Atualizando" : "Atualizar lista"}
-        </button>
+        <div className="admin-referral-hero-actions">
+          <button type="button" onClick={() => void exportPaymentSummary()} disabled={exporting} className="admin-referral-export" aria-busy={exporting}>
+            {exporting ? <LoaderCircle size={16} className="animate-spin"/> : <Download size={16}/>}<span>{exporting ? "Gerando Excel…" : "Exportar Excel"}</span>
+          </button>
+          <button type="button" onClick={() => setRefreshKey((value) => value + 1)} disabled={loading} className="admin-referral-refresh">
+            <RefreshCw size={16} className={loading ? "animate-spin" : ""}/>{loading ? "Atualizando" : "Atualizar lista"}
+          </button>
+        </div>
       </div>
       <div className="admin-referral-hero-signal"><span>NO RADAR</span><strong>{loading && !result ? "—" : fmtNumber(statusCounts.to_pay)}</strong><span>{statusCounts.to_pay === 1 ? "prêmio aguarda pagamento" : "prêmios aguardam pagamento"}</span><button type="button" onClick={() => changeStatus("to_pay")}>Ver pendências <ArrowRight size={15}/></button></div>
     </header>
@@ -1484,6 +1574,7 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
       </div>
 
       {error && <div role="alert" className="admin-referral-message is-error"><CircleAlert size={18}/><span>{error}</span><button type="button" onClick={() => setRefreshKey((value) => value + 1)}>Tentar novamente</button></div>}
+      {exportError && <div role="alert" className="admin-referral-message is-error"><CircleAlert size={18}/><span>{exportError}</span><button type="button" onClick={() => void exportPaymentSummary()}>Tentar exportar novamente</button></div>}
       {actionError && <div role="alert" className="admin-referral-message is-error"><CircleAlert size={18}/><span>{actionError}</span></div>}
       {actionNotice && <div role="status" className="admin-referral-message is-success"><CheckCircle2 size={18}/><span>{actionNotice}</span></div>}
 

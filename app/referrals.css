@@ -29,6 +29,11 @@
   pointer-events: none;
 }
 .admin-referral-hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.25rem; }
+.admin-referral-hero-actions { display: flex; flex: 0 0 auto; align-items: center; gap: .55rem; }
+.admin-referral-export { display: inline-flex; min-height: 2.75rem; align-items: center; justify-content: center; gap: .5rem; padding: .5rem .9rem; border: 1px solid var(--primary-foreground); border-radius: var(--radius-sm); background: var(--primary-foreground); color: var(--primary-deep); font-size: .875rem; font-weight: 760; transition: background .18s ease, transform .18s ease, box-shadow .18s ease; }
+.admin-referral-export:hover:not(:disabled) { transform: translateY(-1px); background: var(--primary-foreground); box-shadow: 0 5px 14px -9px var(--primary-deep); }
+.admin-referral-export:focus-visible { outline: 3px solid var(--primary-foreground); outline-offset: 3px; }
+.admin-referral-export:disabled { cursor: wait; opacity: .78; }
 .admin-referral-eyebrow { display: inline-flex; align-items: center; gap: .55rem; color: #b5daf9; font-size: .65rem; font-weight: 800; letter-spacing: .145em; }
 .admin-referral-eyebrow-mark { width: .45rem; height: .45rem; border-radius: 50%; background: #67d6b8; box-shadow: 0 0 0 .23rem #67d6b824; }
 .admin-referral-hero h1 { margin-top: .65rem; font-size: clamp(2rem, 3.3vw, 2.9rem); font-weight: 780; letter-spacing: -.055em; line-height: 1.04; }
@@ -155,6 +160,8 @@
   .admin-referral-column-label { display: block; }
 }
 @media (max-width: 740px) {
+  .admin-referral-hero-top { flex-wrap: wrap; }
+  .admin-referral-hero-actions { margin-left: auto; }
   .admin-referral-refresh { width: 2.75rem; padding: 0; font-size: 0; }
   .admin-referral-hero-signal { position: static; margin-top: 1.35rem; }
   .admin-referral-toolbar { flex-wrap: wrap; }
@@ -169,6 +176,9 @@
   .admin-referral-hero { padding: 1.25rem; }
   .admin-referral-hero h1 { font-size: 2rem; }
   .admin-referral-hero p { font-size: .8rem; }
+  .admin-referral-hero-actions { gap: .4rem; }
+  .admin-referral-export { min-height: 2.75rem; gap: .38rem; padding: .45rem .6rem; font-size: .875rem; }
+  .admin-referral-export svg { width: 14px; height: 14px; }
   .admin-referral-hero-signal { width: 100%; flex-wrap: wrap; gap: .35rem .5rem; margin-top: 1.35rem; }
   .admin-referral-hero-signal button { margin-left: auto; }
   .admin-referral-statuses { gap: .45rem; }
