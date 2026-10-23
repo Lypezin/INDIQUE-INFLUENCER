@@ -194,6 +194,14 @@ function parseExcelSerialDate(serial: number): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
 }
 
+export function todayInBrasilia(): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const value = (part: string) => parts.find((item) => item.type === part)?.value ?? "";
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
 function parsePerformanceDate(value: string, rawValue?: unknown): string | null {
   // Excel stores dates as serial numbers. Prefer that underlying value over
   // the cell's localized display string, which can swap day and month.
@@ -375,9 +383,12 @@ export async function parsePerformance(file: File): Promise<ImportPreview<Perfor
   let invalidUuid = 0;
   let invalidRoutes = 0;
   let invalidDataDate = 0;
+  let futureDataDate = 0;
+  let firstFutureDate: string | null = null;
   let repeatedRows = 0;
   let firstDate: string | null = null;
   let lastDate: string | null = null;
+  const today = todayInBrasilia();
 
   // Fixed spreadsheet positions: A period date, F UUID, G name, H region, R completed rides.
   const { fileHash, sourceRows } = await forEachSpreadsheetRow(file, 18, [0, 5, 6, 7, 17], (values, rawValues) => {
@@ -398,6 +409,9 @@ export async function parsePerformance(file: File): Promise<ImportPreview<Perfor
     const dataDate = parsePerformanceDate(rawDate, rawValues[0]);
     if (!dataDate) {
       invalidDataDate += 1;
+    } else if (dataDate > today) {
+      futureDataDate += 1;
+      firstFutureDate ??= dataDate;
     } else {
       firstDate = firstDate === null || dataDate < firstDate ? dataDate : firstDate;
       lastDate = lastDate === null || dataDate > lastDate ? dataDate : lastDate;
@@ -429,6 +443,9 @@ export async function parsePerformance(file: File): Promise<ImportPreview<Perfor
       });
     }
   });
+  if (futureDataDate > 0) {
+    throw new Error(`${futureDataDate.toLocaleString("pt-BR")} linha(s) da coluna A resultaram em data futura (ex.: ${firstFutureDate}). Confira o formato das datas antes de importar; nenhuma corrida foi adicionada.`);
+  }
   const warnings: string[] = [];
   if (invalidUuid) warnings.push(`${invalidUuid} linha(s) foram ignoradas por não conterem UUID válido.`);
   if (invalidRoutes) warnings.push(`${invalidRoutes} linha(s) foram ignoradas por terem uma quantidade de corridas inválida.`);

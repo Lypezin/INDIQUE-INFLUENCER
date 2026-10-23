@@ -15,7 +15,7 @@ import {
 import { callAccessApi, callAdminApi, callDataCrazySync, DATA_SCHEMA, getSupabase } from "@/lib/supabase";
 import {
   parsePerformance, type ImportPreview, type PerformanceImportRow,
-  repairTextEncoding,
+  repairTextEncoding, todayInBrasilia,
 } from "@/lib/importers";
 
 type Role = "admin" | "influencer";
@@ -961,15 +961,20 @@ function ImportPanel({ overview, refresh }: { overview: AdminOverview; refresh: 
 }
 
 function PerformanceCoveragePanel({ coverage, loading, error, onRetry }: { coverage: PerformanceCoverage | null; loading: boolean; error: string; onRetry: () => void }) {
+  const today = todayInBrasilia();
+  const futureCityCount = coverage?.cities.filter((item) => item.lastDate && item.lastDate > today).length ?? 0;
+  const hasFutureDates = Boolean((coverage?.lastDate && coverage.lastDate > today) || futureCityCount > 0);
+
   return <section className="mb-4 portal-panel p-5 sm:p-6">
     <div className="flex items-start gap-3"><div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand-strong"><CalendarDays size={18}/></div><div><h2 className="text-base font-bold">Intervalo dos dados de Performance</h2><p className="mt-1 max-w-3xl text-sm leading-5 text-muted-foreground">Período registrado nos próprios dados da planilha (coluna A), com o intervalo de cada cidade.</p></div></div>
     {loading ? <div className="mt-5 flex items-center gap-2 text-sm text-muted-foreground" role="status"><LoaderCircle size={16} className="animate-spin"/>Consultando os períodos disponíveis…</div>
       : error ? <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-status-danger-surface px-4 py-3 text-sm text-status-danger" role="alert"><span>{error}</span><button onClick={onRetry} className="min-h-10 rounded-lg border border-[#e6bdb4] px-3 font-semibold hover:bg-white">Tentar novamente</button></div>
       : !coverage || (coverage.importCount === 0 && coverage.uncapturedImportCount === 0) ? <p className="mt-5 rounded-xl bg-surface-subtle px-4 py-4 text-sm text-muted-foreground">Ainda não há importações concluídas de Performance.</p>
       : <>
-        {coverage.importCount > 0 && <div className="mt-5 flex flex-col gap-1 rounded-xl bg-surface-subtle px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-xs font-semibold text-muted-foreground">Período geral dos dados</div><div className="mt-1 text-base font-bold tabular-nums text-heading">{fmtDateRange(coverage.firstDate, coverage.lastDate)}</div></div><div className="text-xs text-muted-foreground">{fmtNumber(coverage.importCount)} importações com datas reconhecidas · {fmtNumber(coverage.rowCount)} linhas válidas</div></div>}
+        {hasFutureDates && <div role="alert" className="mt-5 rounded-xl border border-[#f1d9ae] bg-status-warning-surface px-4 py-3 text-sm leading-5 text-status-warning">O período salvo contém datas futuras e precisa ser corrigido. Isso pode acontecer quando uma data como 10/12 (12 de outubro no arquivo) foi lida como 10 de dezembro. Selecione cada arquivo original de Performance na área abaixo e use <strong>Atualizar período sem somar</strong>. As corridas não serão duplicadas.</div>}
+        {coverage.importCount > 0 && <div className="mt-5 flex flex-col gap-1 rounded-xl bg-surface-subtle px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-xs font-semibold text-muted-foreground">Período geral dos dados</div><div className="mt-1 text-base font-bold tabular-nums text-heading">{hasFutureDates ? "Pendente de correção" : fmtDateRange(coverage.firstDate, coverage.lastDate)}</div></div><div className="text-xs text-muted-foreground">{fmtNumber(coverage.importCount)} importações com datas reconhecidas · {fmtNumber(coverage.rowCount)} linhas válidas</div></div>}
         {coverage.uncapturedImportCount > 0 && <div className="mt-4 rounded-xl border border-[#f1d9ae] bg-status-warning-surface px-4 py-3 text-sm leading-5 text-status-warning">{fmtNumber(coverage.uncapturedImportCount)} importação(ões) antiga(s) ainda não têm o período de origem salvo. Selecione novamente o mesmo arquivo na área abaixo e use <strong>Atualizar período sem somar</strong> para recuperar as datas sem duplicar corridas.</div>}
-        {coverage.importCount > 0 && <div className="mt-5"><div className="mb-1 flex flex-wrap items-baseline justify-between gap-2"><h3 className="text-sm font-bold">Período por cidade / praça</h3><span className="text-xs text-[#74889b]">Datas presentes nas planilhas</span></div><ul className="divide-y divide-[#e6ebf2]">{coverage.cities.map((item) => <li key={item.city} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><div className="truncate text-sm font-semibold text-ink-strong">{repairTextEncoding(item.city)}</div><div className="mt-0.5 text-xs text-[#74889b]">{fmtNumber(item.importCount)} importações · {fmtNumber(item.rowCount)} linhas válidas</div></div><div className="shrink-0 text-left sm:text-right"><div className="text-xs font-semibold text-[#74889b]">Intervalo dos dados</div><div className="mt-0.5 text-sm tabular-nums text-ink-mid">{fmtDateRange(item.firstDate, item.lastDate)}</div></div></li>)}</ul></div>}
+        {coverage.importCount > 0 && <div className="mt-5"><div className="mb-1 flex flex-wrap items-baseline justify-between gap-2"><h3 className="text-sm font-bold">Período por cidade / praça</h3><span className="text-xs text-[#74889b]">Datas presentes nas planilhas</span></div><ul className="divide-y divide-[#e6ebf2]">{coverage.cities.map((item) => <li key={item.city} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><div className="truncate text-sm font-semibold text-ink-strong">{repairTextEncoding(item.city)}</div><div className="mt-0.5 text-xs text-[#74889b]">{fmtNumber(item.importCount)} importações · {fmtNumber(item.rowCount)} linhas válidas</div></div><div className="shrink-0 text-left sm:text-right"><div className="text-xs font-semibold text-[#74889b]">Intervalo dos dados</div><div className="mt-0.5 text-sm tabular-nums text-ink-mid">{item.lastDate && item.lastDate > today ? "Pendente de correção" : fmtDateRange(item.firstDate, item.lastDate)}</div></div></li>)}</ul></div>}
       </>}
   </section>;
 }
