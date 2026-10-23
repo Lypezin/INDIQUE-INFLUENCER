@@ -29,6 +29,7 @@ type Referral = {
   name: string;
   region: string | null;
   released_at: string | null;
+  goal_reached_at: string | null;
   phone: string | null;
   cpf: string | null;
   routes: number;
@@ -69,7 +70,7 @@ type AdminReferralEvent = {
 };
 type AdminReferral = {
   referral_id: string; uuid: string | null; lead_id: string | null; is_unidentified: boolean;
-  name: string; region: string | null; released_at: string | null; phone: string | null; cpf: string | null;
+  name: string; region: string | null; released_at: string | null; goal_reached_at: string | null; phone: string | null; cpf: string | null;
   influencer_id: string; influencer_name: string; pipeline_influencer_id: string | null; pipeline_influencer_name: string | null;
   assignment_overridden: boolean; routes: number; route_goal: number; prize_cents: number; prize_unlocked: boolean;
   routes_remaining: number; reward_status: AdminReferralStatus; paid_at: string | null; paid_amount_cents: number | null;
@@ -203,7 +204,7 @@ export default function Home() {
     const all: Referral[] = [];
     for (let offset = 0; ; offset += 500) {
       const { data, error } = await supabase.schema(DATA_SCHEMA).from("referral_progress")
-        .select("referral_id,uuid,lead_id,is_unidentified,name,region,released_at,phone,cpf,routes,route_goal,prize_cents,prize_unlocked,routes_remaining,influencer_name")
+        .select("referral_id,uuid,lead_id,is_unidentified,name,region,released_at,goal_reached_at,phone,cpf,routes,route_goal,prize_cents,prize_unlocked,routes_remaining,influencer_name")
         .order("prize_unlocked", { ascending: false }).order("routes", { ascending: false }).order("uuid").order("lead_id")
         .range(offset, offset + 499);
       if (error) throw error;
@@ -585,7 +586,7 @@ function ReferralRow({ referral }: { referral: Referral }) {
   const progress = referral.route_goal > 0 ? Math.min(100, Math.round(referral.routes / referral.route_goal * 100)) : 0;
   const detailsId = `referral-details-${referral.referral_id}`;
   return <div className="route-strip px-4 py-4 sm:px-6"><button onClick={() => setExpanded(!expanded)} aria-expanded={expanded} aria-controls={detailsId} className="grid min-h-14 w-full gap-4 text-left md:grid-cols-[minmax(180px,1.05fr)_minmax(190px,1.4fr)_145px_24px] md:items-center">
-    <div className="flex min-w-0 items-center gap-3"><div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-xs font-bold text-[#2b5d9c]">{(referral.name || "EN").split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</div><div className="min-w-0 flex-1"><div className="courier-name">{referral.name || "Nome indisponível"}</div><div className="mt-1 flex items-center gap-1 text-xs text-[#657b90]"><MapPin size={13}/>{referral.region || "Região não informada"}</div><div className="mt-1 flex items-center gap-1 text-xs text-[#74889b]"><CalendarDays size={13}/>Liberação: {fmtDate(referral.released_at)}</div></div><ChevronDown size={18} className={`shrink-0 text-[#5e7894] transition md:hidden ${expanded ? "rotate-180" : ""}`} /></div>
+    <div className="flex min-w-0 items-center gap-3"><div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-xs font-bold text-[#2b5d9c]">{(referral.name || "EN").split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</div><div className="min-w-0 flex-1"><div className="courier-name">{referral.name || "Nome indisponível"}</div><div className="mt-1 flex items-center gap-1 text-xs text-[#657b90]"><MapPin size={13}/>{referral.region || "Região não informada"}</div><div className="mt-1 flex items-center gap-1 text-xs text-[#74889b]"><CalendarDays size={13}/>Liberação: {fmtDate(referral.released_at)}</div>{referral.prize_unlocked && <div className="mt-1 flex items-center gap-1 text-xs font-semibold text-brand-strong"><CheckCircle2 size={13}/>Meta atingida: {referral.goal_reached_at ? fmtDate(referral.goal_reached_at) : "Data pendente"}</div>}</div><ChevronDown size={18} className={`shrink-0 text-[#5e7894] transition md:hidden ${expanded ? "rotate-180" : ""}`} /></div>
     <div><div className="mb-2 flex items-center justify-between text-xs"><span className="font-semibold text-[#294866]">{fmtNumber(referral.routes)} <span className="font-normal text-[#64798d]">de {fmtNumber(referral.route_goal)} corridas</span></span><span className="font-semibold text-[#245ca6]">{progress}%</span></div><div className="route-meter" role="progressbar" aria-label={`Progresso de ${referral.name || "entregador"}`} aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-valuetext={`${fmtNumber(referral.routes)} de ${fmtNumber(referral.route_goal)} corridas`}><div className="route-meter-fill" style={{ transform: `scaleX(${progress / 100})` }}/></div>{referral.is_unidentified && <p className="mt-2 text-xs leading-5 text-status-warning">Sem UUID do entregador; corridas serão cruzadas quando esse ID estiver disponível.</p>}</div>
     <div className="flex items-center justify-between gap-2 md:block md:text-right">{referral.prize_unlocked ? <span className="inline-flex items-center gap-1.5 rounded-full bg-status-success-surface px-2.5 py-1.5 text-xs font-bold text-brand-strong"><CheckCircle2 size={12}/>Prêmio liberado</span> : <><span className="block text-sm font-semibold text-[#415b60]">Faltam {fmtNumber(referral.routes_remaining)}</span><span className="mt-0.5 block text-xs text-[#697f94]">para {fmtMoney(referral.prize_cents)}</span></>}</div><ChevronDown size={16} className={`hidden text-[#9aaaa8] transition md:block ${expanded ? "rotate-180" : ""}`} />
   </button><div id={detailsId} className={`courier-details-reveal ${expanded ? "is-open" : ""}`} hidden={!expanded}>{expanded && <div><div className="mt-4 grid gap-3 rounded-xl bg-surface-subtle p-3.5 text-sm sm:grid-cols-3"><Detail label="Telefone" value={referral.phone || "Indisponível"}/><Detail label="CPF" value={referral.cpf ? `${referral.cpf.slice(0, 3)}.${referral.cpf.slice(3, 6)}.${referral.cpf.slice(6, 9)}-${referral.cpf.slice(9)}` : "Não informado"}/><Detail label={referral.is_unidentified ? "ID do lead Data Crazy" : "UUID"} value={referral.is_unidentified ? referral.lead_id || "Indisponível" : referral.uuid || "Não informado"}/></div></div>}</div></div>;
@@ -1706,7 +1707,7 @@ function AdminReferralRow({ item, busy, onRequestConfirm }: {
       {expanded && <>
       <div className="admin-referral-facts">
         <div><span>Identificador</span><strong className="break-all">{item.uuid ? `UUID · ${item.uuid}` : `ID do lead · ${item.lead_id || "indisponível"}`}</strong></div>
-        <div><span>Liberação</span><strong>{fmtDate(item.released_at)}</strong></div>
+        <div><span>Liberação</span><strong>{fmtDate(item.released_at)}</strong></div><div><span>Meta atingida</span><strong>{item.prize_unlocked ? item.goal_reached_at ? fmtDate(item.goal_reached_at) : "Data pendente" : "Ainda não atingida"}</strong></div>
         <div><span>Telefone</span><strong>{item.phone || "Indisponível"}</strong></div>
         <div><span>CPF</span><strong>{item.cpf || "Indisponível"}</strong></div>
         {item.reward_status === "paid" && <div><span>Pagamento</span><strong>{fmtDate(item.paid_at)}{item.paid_influencer_name ? ` · ${item.paid_influencer_name}` : ""}</strong></div>}
