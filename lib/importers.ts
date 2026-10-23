@@ -102,7 +102,7 @@ export function normalizeInfluencer(value: unknown): InfluencerId | "ignored" | 
   return null;
 }
 
-type SelectedRowConsumer = (values: string[]) => void;
+type SelectedRowConsumer = (values: string[], rawValues: unknown[]) => void;
 
 function decodeCsv(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -161,14 +161,19 @@ async function forEachSpreadsheetRow(
   }
 
   for (let row = 1; row <= sourceRows; row += 1) {
+    const rawValues: unknown[] = [];
     const values = selectedColumns.map((column) => {
       const address = XLSX.utils.encode_cell({ r: row, c: column });
       const value = (sheet as Record<string, unknown>)[address];
-      if (typeof value !== "object" || value === null) return "";
+      if (typeof value !== "object" || value === null) {
+        rawValues.push("");
+        return "";
+      }
       const cell = value as { w?: unknown; v?: unknown };
+      rawValues.push(cell.v ?? "");
       return repairMojibake(String(cell.w ?? cell.v ?? "")).trim();
     });
-    consume(values);
+    consume(values, rawValues);
     // Let the browser paint between batches when projecting large worksheets.
     if (row % 2_000 === 0) await new Promise<void>((resolve) => setTimeout(resolve, 0));
   }
@@ -183,7 +188,20 @@ function validUuid(value: string): string | null {
   return UUID.test(cleaned) ? cleaned : null;
 }
 
-function parsePerformanceDate(value: string): string | null {
+function parseExcelSerialDate(serial: number): string | null {
+  if (!Number.isFinite(serial) || serial <= 0) return null;
+  const date = new Date(Date.UTC(1899, 11, 30) + Math.floor(serial) * 86_400_000);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
+
+function parsePerformanceDate(value: string, rawValue?: unknown): string | null {
+  // Excel stores dates as serial numbers. Prefer that underlying value over
+  // the cell's localized display string, which can swap day and month.
+  if (typeof rawValue === "number") return parseExcelSerialDate(rawValue);
+  if (rawValue instanceof Date && !Number.isNaN(rawValue.getTime())) {
+    return `${rawValue.getUTCFullYear().toString().padStart(4, "0")}-${(rawValue.getUTCMonth() + 1).toString().padStart(2, "0")}-${rawValue.getUTCDate().toString().padStart(2, "0")}`;
+  }
+
   const cleaned = value.trim();
   if (!cleaned) return null;
 
@@ -210,11 +228,7 @@ function parsePerformanceDate(value: string): string | null {
   // Spreadsheet libraries may expose an unformatted Excel serial instead of
   // the cell's displayed date string.
   if (/^\d{4,6}(?:\.\d+)?$/.test(cleaned)) {
-    const serial = Number(cleaned);
-    if (serial > 0) {
-      const date = new Date(Date.UTC(1899, 11, 30) + Math.floor(serial) * 86_400_000);
-      if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
-    }
+    return parseExcelSerialDate(Number(cleaned));
   }
   return null;
 }
@@ -366,7 +380,7 @@ export async function parsePerformance(file: File): Promise<ImportPreview<Perfor
   let lastDate: string | null = null;
 
   // Fixed spreadsheet positions: A period date, F UUID, G name, H region, R completed rides.
-  const { fileHash, sourceRows } = await forEachSpreadsheetRow(file, 18, [0, 5, 6, 7, 17], (values) => {
+  const { fileHash, sourceRows } = await forEachSpreadsheetRow(file, 18, [0, 5, 6, 7, 17], (values, rawValues) => {
     const [rawDate, rawUuid, name, region, rawRouteValue] = values;
     if (!rawUuid) return;
     const uuid = validUuid(rawUuid);
@@ -381,7 +395,7 @@ export async function parsePerformance(file: File): Promise<ImportPreview<Perfor
       return;
     }
 
-    const dataDate = parsePerformanceDate(rawDate);
+    const dataDate = parsePerformanceDate(rawDate, rawValues[0]);
     if (!dataDate) {
       invalidDataDate += 1;
     } else {
