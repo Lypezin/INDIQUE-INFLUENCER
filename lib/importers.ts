@@ -26,6 +26,14 @@ export type PerformanceImportRow = {
   name: string;
   region: string;
   routes: number;
+  daily: PerformanceDailyRow[];
+};
+
+export type PerformanceDailyRow = {
+  date: string;
+  city: string;
+  routes: number;
+  rowCount: number;
 };
 
 export type PerformanceDataCoverageCity = {
@@ -379,6 +387,7 @@ export async function parseDataCrazy(file: File): Promise<ImportPreview<Referral
 
 export async function parsePerformance(file: File): Promise<ImportPreview<PerformanceImportRow>> {
   const byUuid = new Map<string, PerformanceImportRow>();
+  const dailyByUuid = new Map<string, Map<string, PerformanceDailyRow>>();
   const cityCoverage = new Map<string, PerformanceDataCoverageCity>();
   let invalidUuid = 0;
   let invalidRoutes = 0;
@@ -428,6 +437,15 @@ export async function parsePerformance(file: File): Promise<ImportPreview<Perfor
     }
 
     const wholeRoutes = routes;
+    if (dataDate && dataDate <= today) {
+      const city = region.trim() || "Praça não informada";
+      const rows = dailyByUuid.get(uuid) ?? new Map<string, PerformanceDailyRow>();
+      const key = `${dataDate}\u0000${city}`;
+      const existing = rows.get(key);
+      if (existing) { existing.routes += routes; existing.rowCount += 1; }
+      else rows.set(key, { date: dataDate, city, routes, rowCount: 1 });
+      dailyByUuid.set(uuid, rows);
+    }
     const previous = byUuid.get(uuid);
     if (previous) {
       previous.routes += wholeRoutes;
@@ -440,16 +458,20 @@ export async function parsePerformance(file: File): Promise<ImportPreview<Perfor
         name,
         region,
         routes: wholeRoutes,
+        daily: [],
       });
     }
   });
   if (futureDataDate > 0) {
     throw new Error(`${futureDataDate.toLocaleString("pt-BR")} linha(s) da coluna A resultaram em data futura (ex.: ${firstFutureDate}). Confira o formato das datas antes de importar; nenhuma corrida foi adicionada.`);
   }
+  if (invalidDataDate > 0) {
+    throw new Error(`${invalidDataDate.toLocaleString("pt-BR")} linha(s) com corridas não possuem uma data reconhecida na coluna A. Corrija o arquivo antes de importar; nenhuma corrida foi adicionada.`);
+  }
+  for (const [uuid, row] of byUuid) row.daily = [...(dailyByUuid.get(uuid)?.values() ?? [])];
   const warnings: string[] = [];
   if (invalidUuid) warnings.push(`${invalidUuid} linha(s) foram ignoradas por não conterem UUID válido.`);
   if (invalidRoutes) warnings.push(`${invalidRoutes} linha(s) foram ignoradas por terem uma quantidade de corridas inválida.`);
-  if (invalidDataDate) warnings.push(`${invalidDataDate} linha(s) válidas de corridas não tinham uma data reconhecida na coluna A e ficaram fora da cobertura de período.`);
   if (repeatedRows) warnings.push(`${repeatedRows} linha(s) do mesmo UUID foram somadas dentro desta importação.`);
   if (byUuid.size === 0) throw new Error("Nenhum UUID válido foi encontrado na coluna F.");
   if (!firstDate || !lastDate || cityCoverage.size === 0) {

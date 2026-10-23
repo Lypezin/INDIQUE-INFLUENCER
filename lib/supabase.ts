@@ -79,6 +79,32 @@ export async function callAdminApi<T>(
       p_data_coverage: payload.dataCoverage,
     });
     data = result.data; error = result.error;
+  } else if (action === "performance-detail-begin") {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("begin_performance_detail_backfill", {
+      p_file_hash: payload.fileHash,
+    });
+    data = result.data; error = result.error;
+  } else if (action === "performance-detail-chunk") {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("append_performance_detail_backfill", {
+      p_file_hash: payload.fileHash, p_rows: payload.rows,
+    });
+    data = result.data; error = result.error;
+  } else if (action === "performance-detail-finish") {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("finish_performance_detail_backfill", {
+      p_file_hash: payload.fileHash, p_expected_rows: payload.expectedRows,
+    });
+    data = result.data; error = result.error;
+  } else if (action === "performance-delete-preview") {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("preview_performance_period_delete", {
+      p_from: payload.from, p_to: payload.to, p_city: payload.city || null,
+    });
+    data = result.data; error = result.error;
+  } else if (action === "performance-delete") {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("delete_performance_period", {
+      p_from: payload.from, p_to: payload.to, p_city: payload.city || null,
+      p_expected_routes: payload.expectedRoutes, p_expected_rows: payload.expectedRows,
+    });
+    data = result.data; error = result.error;
   } else if (action === "account-name-set") {
     const result = await supabase.schema(DATA_SCHEMA).rpc("update_admin_display_name", {
       p_user_id: payload.userId,
