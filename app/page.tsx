@@ -1684,6 +1684,9 @@ function AdminReferralRow({ item, busy, onRequestConfirm }: {
   const detailsId = `admin-referral-details-${item.referral_id}`;
   const statusText = item.reward_status === "paid" ? "Pago" : item.reward_status === "to_pay" ? "A pagar" : "Em progresso";
   const initials = (item.name || "?").trim().split(/\s+/).slice(0, 2).map((part) => part[0] || "").join("").toLocaleUpperCase("pt-BR");
+  const goalReachedDisplay = item.prize_unlocked
+    ? item.goal_reached_at ? fmtDate(item.goal_reached_at) : "Data pendente"
+    : "Ainda não atingida";
 
   return <article className={`admin-referral-row ${expanded ? "is-expanded" : ""}`}>
     <div className="admin-referral-row-main">
@@ -1703,11 +1706,14 @@ function AdminReferralRow({ item, busy, onRequestConfirm }: {
         <button type="button" className="admin-referral-expand" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={detailsId}><span>{expanded ? "Ocultar detalhes" : "Ver detalhes"}</span><ChevronDown size={17}/></button>
       </div>
     </div>
+    <div className="admin-referral-row-dates">
+      <span className="admin-referral-row-date"><CalendarDays size={14} aria-hidden="true"/><span>Liberação</span><strong>{fmtDate(item.released_at)}</strong></span>
+      <span className="admin-referral-row-date"><CheckCircle2 size={14} aria-hidden="true"/><span>Meta atingida</span><strong className={!item.goal_reached_at ? "is-pending" : undefined}>{goalReachedDisplay}</strong></span>
+    </div>
     <div id={detailsId} className={`admin-referral-details ${!item.recent_events?.length ? "is-facts-only" : ""}`} hidden={!expanded}>
       {expanded && <>
       <div className="admin-referral-facts">
         <div><span>Identificador</span><strong className="break-all">{item.uuid ? `UUID · ${item.uuid}` : `ID do lead · ${item.lead_id || "indisponível"}`}</strong></div>
-        <div><span>Liberação</span><strong>{fmtDate(item.released_at)}</strong></div><div><span>Meta atingida</span><strong>{item.prize_unlocked ? item.goal_reached_at ? fmtDate(item.goal_reached_at) : "Data pendente" : "Ainda não atingida"}</strong></div>
         <div><span>Telefone</span><strong>{item.phone || "Indisponível"}</strong></div>
         <div><span>CPF</span><strong>{item.cpf || "Indisponível"}</strong></div>
         {item.reward_status === "paid" && <div><span>Pagamento</span><strong>{fmtDate(item.paid_at)}{item.paid_influencer_name ? ` · ${item.paid_influencer_name}` : ""}</strong></div>}
