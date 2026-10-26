@@ -112,15 +112,15 @@ export async function callAdminApi<T>(
     });
     data = result.data; error = result.error;
   } else if (action === "admin-referrals") {
-    const result = await supabase.schema(DATA_SCHEMA).rpc("admin_referrals_page_filtered_v3", {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("admin_referrals_page_filtered_v4", {
       p_reward_status: payload.rewardStatus,
       p_limit: payload.limit,
       p_offset: payload.offset,
       p_influencer_id: payload.influencerId,
       p_search: payload.search,
       p_id_filter: payload.idFilter,
-      p_released_from: payload.releasedFrom || null,
-      p_released_to: payload.releasedTo || null,
+      p_goal_from: payload.goalFrom || null,
+      p_goal_to: payload.goalTo || null,
     });
     data = result.data; error = result.error;
   } else if (action === "referral-assignment") {

@@ -1381,8 +1381,8 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
   const pageSize = 50;
   const [filterId, setFilterId] = useState("all");
   const [idFilter, setIdFilter] = useState<"all" | "present" | "missing">("all");
-  const [releasedFrom, setReleasedFrom] = useState("");
-  const [releasedTo, setReleasedTo] = useState("");
+  const [goalFrom, setGoalFrom] = useState("");
+  const [goalTo, setGoalTo] = useState("");
   const [rewardStatus, setRewardStatus] = useState<AdminReferralStatus>("progress");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
@@ -1408,8 +1408,8 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
           offset: page * pageSize,
           influencerId: filterId,
           idFilter,
-          releasedFrom,
-          releasedTo,
+          goalFrom,
+          goalTo,
           search: search.trim(),
           rewardStatus,
         });
@@ -1428,7 +1428,7 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
       }
     }, search.trim() ? 250 : 0);
     return () => { cancelled = true; window.clearTimeout(timeout); };
-  }, [filterId, idFilter, page, refreshKey, releasedFrom, releasedTo, rewardStatus, search]);
+  }, [filterId, goalFrom, goalTo, idFilter, page, refreshKey, rewardStatus, search]);
 
   const firstItem = result && result.total > 0 ? page * pageSize + 1 : 0;
   const lastItem = result ? Math.min((page + 1) * pageSize, result.total) : 0;
@@ -1489,7 +1489,7 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
     setExportError("");
     try {
       const exportPageSize = 100;
-      const query = { rewardStatus: "all", limit: exportPageSize, influencerId: "all", idFilter: "all", releasedFrom: null, releasedTo: null, search: "" };
+      const query = { rewardStatus: "all", limit: exportPageSize, influencerId: "all", idFilter: "all", goalFrom: null, goalTo: null, search: "" };
       const firstPage = await callAdminApi<AdminReferralsResult>("admin-referrals", { ...query, offset: 0 });
       const pages: AdminReferralsResult[] = [firstPage];
       const offsets = Array.from({ length: Math.ceil(firstPage.total / exportPageSize) - 1 }, (_, index) => (index + 1) * exportPageSize);
@@ -1616,14 +1616,14 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
             <option value="missing">Mensagens · sem ID</option>
           </select>
         </label>
-        <div className={`admin-referral-release-filter ${releasedFrom || releasedTo ? "is-active" : ""}`}>
-          <span>Data de liberação</span>
-          <div className="admin-referral-release-pair">
-            <label><span>De</span><input type="date" value={releasedFrom} max={releasedTo || undefined} aria-label="Liberado a partir de" onChange={(event) => { setReleasedFrom(event.target.value); setPage(0); setResult(null); }}/></label>
-            <label><span>Até</span><input type="date" value={releasedTo} min={releasedFrom || undefined} aria-label="Liberado até" onChange={(event) => { setReleasedTo(event.target.value); setPage(0); setResult(null); }}/></label>
+        <div className={`admin-referral-goal-filter ${goalFrom || goalTo ? "is-active" : ""}`}>
+          <span>Data da meta atingida</span>
+          <div className="admin-referral-goal-pair">
+            <label><span>De</span><input type="date" value={goalFrom} max={goalTo || undefined} aria-label="Meta atingida a partir de" onChange={(event) => { setGoalFrom(event.target.value); setPage(0); setResult(null); }}/></label>
+            <label><span>Até</span><input type="date" value={goalTo} min={goalFrom || undefined} aria-label="Meta atingida até" onChange={(event) => { setGoalTo(event.target.value); setPage(0); setResult(null); }}/></label>
           </div>
         </div>
-        {(filterId !== "all" || idFilter !== "all" || releasedFrom || releasedTo || search) && <button type="button" className="admin-referral-clear" onClick={() => { setFilterId("all"); setIdFilter("all"); setReleasedFrom(""); setReleasedTo(""); setSearch(""); setPage(0); setResult(null); }}>Limpar filtros</button>}
+        {(filterId !== "all" || idFilter !== "all" || goalFrom || goalTo || search) && <button type="button" className="admin-referral-clear" onClick={() => { setFilterId("all"); setIdFilter("all"); setGoalFrom(""); setGoalTo(""); setSearch(""); setPage(0); setResult(null); }}>Limpar filtros</button>}
       </div>
 
       <div className="admin-referral-summary" aria-live="polite" aria-busy={loading}>
@@ -1643,7 +1643,7 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
       {actionNotice && <div role="status" className="admin-referral-message is-success"><CheckCircle2 size={18}/><span>{actionNotice}</span></div>}
 
       {loading && !result ? <div className="admin-referral-load"><LoaderCircle className="animate-spin" size={20}/>Carregando indicados…</div>
-        : result?.items.length === 0 ? <EmptyState title={idFilter === "missing" ? "Nenhum indicado sem ID nesta seleção" : idFilter === "present" ? "Nenhum indicado com ID nesta seleção" : rewardStatus === "progress" ? "Nenhum indicado em progresso" : rewardStatus === "to_pay" ? "Nenhum pagamento pendente" : "Nenhum pagamento registrado"} detail={filterId !== "all" || idFilter !== "all" || releasedFrom || releasedTo || search ? "Altere a busca ou limpe os filtros para ver outros indicados." : rewardStatus === "to_pay" ? "Quando um entregador atingir a meta, ele aparecerá aqui para você registrar o pagamento." : rewardStatus === "paid" ? "Os pagamentos registrados aparecerão aqui com data e valor." : "Os entregadores com corridas abaixo da meta aparecerão aqui."}/>
+        : result?.items.length === 0 ? <EmptyState title={idFilter === "missing" ? "Nenhum indicado sem ID nesta seleção" : idFilter === "present" ? "Nenhum indicado com ID nesta seleção" : rewardStatus === "progress" ? "Nenhum indicado em progresso" : rewardStatus === "to_pay" ? "Nenhum pagamento pendente" : "Nenhum pagamento registrado"} detail={goalFrom || goalTo ? rewardStatus === "progress" ? "Entregadores em progresso ainda não têm data de meta. Consulte A pagar ou Pagos para usar este período." : "Não há metas atingidas nesse período. Altere as datas ou limpe os filtros." : filterId !== "all" || idFilter !== "all" || search ? "Altere a busca ou limpe os filtros para ver outros indicados." : rewardStatus === "to_pay" ? "Quando um entregador atingir a meta, ele aparecerá aqui para você registrar o pagamento." : rewardStatus === "paid" ? "Os pagamentos registrados aparecerão aqui com data e valor." : "Os entregadores com corridas abaixo da meta aparecerão aqui."}/>
         : result ? <>
           <div className="admin-referral-list-head" aria-hidden="true"><span>Entregador</span><span>Responsável</span><span>Corridas</span><span>Prêmio</span><span>Ação</span></div>
           <div className="admin-referral-list" aria-busy={loading}>
