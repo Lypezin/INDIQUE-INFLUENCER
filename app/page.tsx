@@ -215,7 +215,8 @@ export default function Home() {
       })));
       if (!data || data.length < 500) break;
     }
-    return all;
+    // Registros de Mensagens sem UUID ficam disponíveis apenas no painel administrativo.
+    return all.filter((item) => !item.is_unidentified);
   }, [supabase]);
 
   const fetchAdminOverview = useCallback(async () => {
