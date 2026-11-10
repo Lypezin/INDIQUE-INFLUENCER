@@ -112,7 +112,7 @@ export async function callAdminApi<T>(
     });
     data = result.data; error = result.error;
   } else if (action === "admin-referrals") {
-    const result = await supabase.schema(DATA_SCHEMA).rpc("admin_referrals_page_filtered_v4", {
+    const result = await supabase.schema(DATA_SCHEMA).rpc("admin_referrals_page_filtered_v5", {
       p_reward_status: payload.rewardStatus,
       p_limit: payload.limit,
       p_offset: payload.offset,

@@ -69,7 +69,7 @@ type AdminReferralEvent = {
   new_influencer_name: string | null; amount_cents: number | null; occurred_at: string;
 };
 type AdminReferral = {
-  referral_id: string; uuid: string | null; lead_id: string | null; is_unidentified: boolean;
+  referral_id: string; uuid: string | null; lead_id: string | null; is_unidentified: boolean; pipeline_entered_at?: string | null;
   name: string; region: string | null; released_at: string | null; goal_reached_at: string | null; phone: string | null; cpf: string | null;
   influencer_id: string; influencer_name: string; pipeline_influencer_id: string | null; pipeline_influencer_name: string | null;
   assignment_overridden: boolean; routes: number; route_goal: number; prize_cents: number; prize_unlocked: boolean;
@@ -1490,7 +1490,15 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
     setExportError("");
     try {
       const exportPageSize = 100;
-      const query = { rewardStatus: "all", limit: exportPageSize, influencerId: "all", idFilter: "all", goalFrom: null, goalTo: null, search: "" };
+      const query = {
+        rewardStatus: "all",
+        limit: exportPageSize,
+        influencerId: filterId,
+        idFilter,
+        goalFrom: goalFrom || null,
+        goalTo: goalTo || null,
+        search: search.trim(),
+      };
       const firstPage = await callAdminApi<AdminReferralsResult>("admin-referrals", { ...query, offset: 0 });
       const pages: AdminReferralsResult[] = [firstPage];
       const offsets = Array.from({ length: Math.ceil(firstPage.total / exportPageSize) - 1 }, (_, index) => (index + 1) * exportPageSize);
@@ -1501,7 +1509,7 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
         pages.push(...nextPages);
       }
 
-      const summary = new Map(influencers.filter((item) => !item.is_demo).map((item) => [item.id, {
+      const summary = new Map(influencers.filter((item) => !item.is_demo && (filterId === "all" || item.id === filterId)).map((item) => [item.id, {
         influencer: item,
         indicationCount: 0,
         indicationCents: 0,
@@ -1623,6 +1631,7 @@ function AdminReferralsPanel({ influencers }: { influencers: Influencer[] }) {
             <label><span>De</span><input type="date" value={goalFrom} max={goalTo || undefined} aria-label="Meta atingida a partir de" onChange={(event) => { setGoalFrom(event.target.value); setPage(0); setResult(null); }}/></label>
             <label><span>Até</span><input type="date" value={goalTo} min={goalFrom || undefined} aria-label="Meta atingida até" onChange={(event) => { setGoalTo(event.target.value); setPage(0); setResult(null); }}/></label>
           </div>
+          <small className="admin-referral-goal-hint">Mensagens usam a data de entrada na pipeline; o histórico anterior recebe essa data após a próxima sincronização.</small>
         </div>
         {(filterId !== "all" || idFilter !== "all" || goalFrom || goalTo || search) && <button type="button" className="admin-referral-clear" onClick={() => { setFilterId("all"); setIdFilter("all"); setGoalFrom(""); setGoalTo(""); setSearch(""); setPage(0); setResult(null); }}>Limpar filtros</button>}
       </div>

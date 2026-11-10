@@ -227,6 +227,13 @@ function dateOnly(value: unknown): string | null {
     : null;
 }
 
+function timestamp(value: unknown): string | null {
+  const raw = fieldText(value);
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
+}
+
 function cpf(value: unknown): string | null {
   const digits = fieldText(value).replace(/\D/g, "");
   if (digits.length !== 11 || /^(\d)\1{10}$/.test(digits)) return null;
@@ -286,7 +293,14 @@ function businessRow(value: unknown, pipelines: Record<string, { influencerId: s
   const pipelineName = text(pipeline?.name ?? stage?.pipelineName ?? business.pipelineName);
   const stageId = text(stage?.id ?? business.stageId).toLowerCase();
   return businessId && leadId && influencerId
-    ? { businessId, leadId, influencerId, pipelineName, stageId: UUID.test(stageId) ? stageId : null }
+    ? {
+      businessId,
+      leadId,
+      influencerId,
+      pipelineName,
+      stageId: UUID.test(stageId) ? stageId : null,
+      businessCreatedAt: timestamp(business.createdAt),
+    }
     : null;
 }
 
@@ -584,6 +598,18 @@ async function work(service: SupabaseClient, env: Env, runId?: string, maxPages 
         }),
         "Não foi possível salvar uma página da sincronização.",
       ));
+      if (phase === "businesses") {
+        const businessDates = (rows as JsonObject[])
+          .filter((row) => text(row.businessCreatedAt))
+          .map((row) => ({ businessId: row.businessId, businessCreatedAt: row.businessCreatedAt }));
+        if (businessDates.length > 0) {
+          rpcData(await service.schema(DATA_SCHEMA).rpc("record_data_crazy_business_creation_dates", {
+            p_run_id: claim.runId,
+            p_lease_token: claim.leaseToken,
+            p_rows: businessDates,
+          }), "Não foi possível registrar as datas de entrada na pipeline.");
+        }
+      }
       if (!next) throw new SyncError("Estado inesperado da sincronização.", false);
       const nextPhase = next.phase;
       if (nextPhase !== "businesses" && nextPhase !== "leads" && nextPhase !== "ready") {
