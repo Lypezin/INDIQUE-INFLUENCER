@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExt
 import type { Session } from "@supabase/supabase-js";
 import {
   ArrowDownUp, ArrowRight, Award, BarChart3, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
-  CircleAlert, ClipboardList, CloudUpload, Download, Eye, EyeOff, FileSpreadsheet,
+  CircleAlert, CloudUpload, Download, Eye, EyeOff, FileSpreadsheet,
   CalendarDays, Gift, History, LoaderCircle, LogOut, Mail, MapPin, Menu, Moon, RefreshCw, RotateCcw, Search, ShieldCheck, Sun, UserRound, Users, XCircle,
 } from "lucide-react";
 import {
@@ -56,10 +56,9 @@ type DataCrazySyncRun = {
   processed: number; total: number; metrics: Record<string, number>;
   windowMonth?: string | null; errorMessage: string | null; startedAt: string; completedAt: string | null;
 };
-type Review = { id: string; uuid: string | null; lead_id?: string | null; is_unidentified?: boolean; name: string; region: string | null; raw_influencer: string; status: string };
 type Member = { user_id: string; email: string; role: Role; display_name: string | null; influencer_id: string | null; influencer_name: string | null };
 type PendingInvite = { id: string; email: string; role: Role; influencer_name: string | null; created_at: string };
-type AdminOverview = { influencers: Influencer[]; availableInfluencers: Influencer[]; imports: ImportSummary[]; reviews: Review[]; reviewCount: number; members: Member[]; invites: PendingInvite[]; referralCount: number; contributionTotal: number };
+type AdminOverview = { influencers: Influencer[]; availableInfluencers: Influencer[]; imports: ImportSummary[]; members: Member[]; invites: PendingInvite[]; referralCount: number; contributionTotal: number };
 type PerformanceCoverageCity = { city: string; firstDate: string | null; lastDate: string | null; rowCount: number; importCount: number };
 type PerformanceCoverage = { firstDate: string | null; lastDate: string | null; rowCount: number; importCount: number; uncapturedImportCount: number; cities: PerformanceCoverageCity[] };
 type AdminReferralStatus = "progress" | "to_pay" | "paid";
@@ -78,7 +77,7 @@ type AdminReferral = {
 };
 type AdminReferralStatusCounts = Record<AdminReferralStatus, number>;
 type AdminReferralsResult = { items: AdminReferral[]; total: number; totalRoutes: number; unlockedCount: number; unlockedPrizeCents: number; statusCounts: AdminReferralStatusCounts };
-type TabId = "dashboard" | "referrals" | "data-crazy" | "performance" | "reviews" | "accounts" | "profile" | "imports";
+type TabId = "dashboard" | "referrals" | "data-crazy" | "performance" | "accounts" | "profile" | "imports";
 type Theme = "light" | "dark";
 
 const fmtMoney = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
@@ -120,7 +119,6 @@ const adminTabs: { id: TabId; label: string; icon: typeof BarChart3 }[] = [
   { id: "referrals", label: "Indicados", icon: Users },
   { id: "data-crazy", label: "Data Crazy", icon: FileSpreadsheet },
   { id: "performance", label: "Performance", icon: ArrowDownUp },
-  { id: "reviews", label: "Revisões", icon: ClipboardList },
   { id: "imports", label: "Importações", icon: History },
   { id: "accounts", label: "Acessos", icon: Users },
   { id: "profile", label: "Meu perfil", icon: UserRound },
@@ -131,7 +129,6 @@ const adminTabDescriptions: Record<TabId, string> = {
   referrals: "Acompanhe corridas e controle pagamentos.",
   "data-crazy": "Base de entregadores, corridas e movimentações registradas.",
   performance: "Some novas corridas ao histórico e acompanhe a cobertura dos dados.",
-  reviews: "Resolva entregadores sem atribuição clara.",
   imports: "Consulte cargas, etapas e responsáveis.",
   accounts: "Gerencie quem pode acessar cada área.",
   profile: "Ajuste como seu nome aparece no painel.",
@@ -222,19 +219,10 @@ export default function Home() {
   const fetchAdminOverview = useCallback(async () => {
     const data = await callAdminApi<AdminOverview>("admin-overview", {});
     if (!supabase) return data;
-    const [assigned, reviews] = await Promise.all([
-      supabase.schema(DATA_SCHEMA).from("data_crazy_unidentified_referrals")
-        .select("lead_id", { count: "exact", head: true }).not("influencer_id", "is", null).eq("needs_review", false),
-      supabase.schema(DATA_SCHEMA).from("data_crazy_unidentified_referrals")
-        .select("lead_id", { count: "exact", head: true }).eq("needs_review", true),
-    ]);
+    const assigned = await supabase.schema(DATA_SCHEMA).from("data_crazy_unidentified_referrals")
+      .select("lead_id", { count: "exact", head: true }).not("influencer_id", "is", null).eq("needs_review", false);
     if (assigned.error) throw assigned.error;
-    if (reviews.error) throw reviews.error;
-    return {
-      ...data,
-      referralCount: data.referralCount + (assigned.count ?? 0),
-      reviewCount: data.reviewCount + (reviews.count ?? 0),
-    };
+    return { ...data, referralCount: data.referralCount + (assigned.count ?? 0) };
   }, [supabase]);
 
   const loadWorkspace = useCallback(async () => {
@@ -352,7 +340,7 @@ export default function Home() {
   const visibleTabs = isAdmin ? adminTabs.filter((tab) => tab.id !== "profile") : adminTabs.slice(0, 1);
   const primaryTabs = visibleTabs.filter((tab) => tab.id === "dashboard" || tab.id === "referrals");
   const sourceTabs = visibleTabs.filter((tab) => tab.id === "data-crazy" || tab.id === "performance");
-  const managementTabs = visibleTabs.filter((tab) => tab.id === "reviews" || tab.id === "imports" || tab.id === "accounts");
+  const managementTabs = visibleTabs.filter((tab) => tab.id === "imports" || tab.id === "accounts");
   const title = isAdmin ? "Administração" : `Indicações de ${influencer?.name ?? "você"}`;
   const subtitle = isAdmin ? "Indique e Ganhe · Administração" : "Corridas e prêmios por entregador";
 
@@ -610,7 +598,6 @@ function AdminDashboard({ activeTab, overview, profile, refresh, dataVersion, on
     {activeTab === "referrals" && <AdminReferralsPanel key={`${dataVersion}:${refreshVersion}`} influencers={overview.influencers}/>}
     {activeTab === "data-crazy" && <DataCrazySyncPanel overview={overview} refresh={refreshPage} refreshVersion={refreshVersion} onTab={onTab}/>}
     {activeTab === "performance" && <ImportPanel overview={overview} refresh={refresh}/>}
-    {activeTab === "reviews" && <ReviewsPanel overview={overview} refresh={refresh}/>}
     {activeTab === "accounts" && <AccountsPanel overview={overview} refresh={refresh} onAdminNameSaved={onAdminNameSaved}/>}
     {activeTab === "profile" && <ProfileSettingsPanel profile={profile} onAdminNameSaved={onAdminNameSaved}/>}
     {activeTab === "imports" && <ImportHistoryPanel/>}
@@ -623,14 +610,13 @@ function AdminHome({ overview, onTab }: { overview: AdminOverview; onTab: (tab: 
   const importState = (status: string) => ({ completed: "concluída", staging: "em andamento", failed: "falhou", cancelled: "cancelada" })[status as "completed" | "staging" | "failed" | "cancelled"] ?? status;
   return <>
     <section className="admin-action-board portal-panel p-5 sm:p-6">
-      <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-base font-bold text-heading">Quadro de operações</h2><p className="mt-1 text-sm text-muted-foreground">Acompanhe as fontes e resolva as atribuições pendentes.</p></div><button type="button" onClick={() => onTab("referrals")} className="inline-flex min-h-11 items-center gap-2 text-sm font-bold text-brand-strong hover:underline">Abrir indicados <ArrowRight size={15}/></button></div>
-      <div className="mt-4 grid divide-y divide-border-subtle border-y border-border-subtle lg:grid-cols-3 lg:divide-x lg:divide-y-0">
-        <WorkflowAction icon={<ClipboardList size={18}/>} title="Revisões" detail="Atribuições que precisam de análise" meta={`${fmtNumber(overview.reviewCount ?? overview.reviews.length)} pendentes`} onClick={() => onTab("reviews")}/>
+      <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-base font-bold text-heading">Quadro de operações</h2><p className="mt-1 text-sm text-muted-foreground">Acompanhe suas bases e movimentações.</p></div><button type="button" onClick={() => onTab("referrals")} className="inline-flex min-h-11 items-center gap-2 text-sm font-bold text-brand-strong hover:underline">Abrir indicados <ArrowRight size={15}/></button></div>
+      <div className="mt-4 grid divide-y divide-border-subtle border-y border-border-subtle lg:grid-cols-2 lg:divide-x lg:divide-y-0">
         <WorkflowAction icon={<CloudUpload size={18}/>} title="Data Crazy" detail={latestDataCrazy ? `${formatImportTime(latestDataCrazy.created_at)} · ${importState(latestDataCrazy.status)}` : "Aguardando sincronização"} meta={`${fmtNumber(overview.referralCount)} entregadores`} onClick={() => onTab("data-crazy")}/>
         <WorkflowAction icon={<ArrowDownUp size={18}/>} title="Performance" detail={latestPerformance ? `${formatImportTime(latestPerformance.created_at)} · ${importState(latestPerformance.status)}` : "Aguardando importação"} meta={`${fmtNumber(overview.contributionTotal)} corridas`} onClick={() => onTab("performance")}/>
       </div>
     </section>
-    <div className="summary-grid admin-summary-grid mt-6"><StatCard label="Entregadores ativos" value={fmtNumber(overview.referralCount)} icon={<Users size={17}/>} sub="na lista atual do Data Crazy" color="teal"/><StatCard label="Corridas acumuladas" value={fmtNumber(overview.contributionTotal)} icon={<BarChart3 size={17}/>} sub="soma do histórico importado" color="blue"/><StatCard label="Atribuições em revisão" value={fmtNumber(overview.reviewCount ?? overview.reviews.length)} icon={<ClipboardList size={17}/>} sub="leads aguardando responsável" color="gold"/><StatCard label="Contas vinculadas" value={fmtNumber(overview.members.length)} icon={<ShieldCheck size={17}/>} sub="administração e influenciadores" color="plum"/></div>
+    <div className="summary-grid admin-summary-grid mt-6"><StatCard label="Entregadores ativos" value={fmtNumber(overview.referralCount)} icon={<Users size={17}/>} sub="na lista atual do Data Crazy" color="teal"/><StatCard label="Corridas acumuladas" value={fmtNumber(overview.contributionTotal)} icon={<BarChart3 size={17}/>} sub="soma do histórico importado" color="blue"/><StatCard label="Contas vinculadas" value={fmtNumber(overview.members.length)} icon={<ShieldCheck size={17}/>} sub="administração e influenciadores" color="plum"/></div>
     <section className="portal-panel mt-6 p-5 sm:p-6"><div className="flex items-center justify-between gap-3"><h2 className="text-base font-bold text-heading">Metas e prêmios</h2><Gift size={18} className="text-status-warning"/></div><p className="mt-1 text-sm text-muted-foreground">Um prêmio por entregador ao alcançar a meta.</p><div className="mt-4 grid gap-x-8 divide-y divide-border-subtle sm:grid-cols-2 sm:divide-y-0 xl:grid-cols-3">{overview.influencers.map((item) => <div key={item.id} className="flex items-center justify-between gap-3 border-b border-border-subtle py-3 text-sm"><span className="min-w-0 truncate font-semibold text-ink-strong">{item.name}</span><span className="shrink-0 tabular-nums text-muted-foreground">{fmtNumber(item.route_goal)} corridas · <strong className="text-brand-strong">{fmtMoney(item.prize_cents)}</strong></span></div>)}</div></section>
   </>;
 }
@@ -704,7 +690,6 @@ function DataCrazySyncPanel({ overview, refresh, refreshVersion, onTab }: { over
   const latestDataCrazy = imports.find((item) => item.kind === "data_crazy" && item.status === "completed") ?? null;
   const latestPerformance = imports.find((item) => item.kind === "performance" && item.status === "completed") ?? null;
   const dataCrazyUpdatedAt = run?.status === "completed" && run.completedAt ? run.completedAt : latestDataCrazy?.created_at ?? null;
-  const reviewCount = overview.reviewCount ?? overview.reviews.length;
   const runMetrics = Object.entries(run?.metrics ?? {}).filter(([key]) =>
     !key.startsWith("indication") && key !== "pipelineFallback" &&
     !(key === "businessesReceived" && typeof run?.metrics.businesses === "number") &&
@@ -713,7 +698,7 @@ function DataCrazySyncPanel({ overview, refresh, refreshVersion, onTab }: { over
 
   return <div className="dc-workspace">
     <section className="dc-page-heading admin-page-hero" aria-labelledby="dc-page-title">
-      <div className="dc-page-copy"><span className="admin-page-eyebrow"><span className="admin-page-eyebrow-mark"/>CENTRAL DE ADMINISTRAÇÃO</span><h1 id="dc-page-title">Data Crazy</h1><p>Acompanhe o cruzamento com a Performance e revise as atividades registradas.</p></div>
+      <div className="dc-page-copy"><span className="admin-page-eyebrow"><span className="admin-page-eyebrow-mark"/>CENTRAL DE ADMINISTRAÇÃO</span><h1 id="dc-page-title">Data Crazy</h1><p>Acompanhe o cruzamento com a Performance e as atividades registradas.</p></div>
       <AlertDialog>
         <AlertDialogTrigger asChild>
           <button type="button" disabled={loading || starting || run?.status === "running"} className="dc-sync-button">{starting ? <LoaderCircle size={16} className="animate-spin"/> : <RefreshCw size={16}/>}Sincronizar agora</button>
@@ -755,11 +740,6 @@ function DataCrazySyncPanel({ overview, refresh, refreshVersion, onTab }: { over
         <div className="dc-source-copy"><h2>Performance</h2><p>Histórico importado</p><span className="dc-source-updated">{latestPerformance ? `Importada em ${formatImportTime(latestPerformance.created_at)}` : "Aguardando a primeira importação"}</span></div>
         <div className="dc-source-metric"><strong>{fmtNumber(overview.contributionTotal)}</strong><span>corridas</span></div>
       </article>
-      <article className="dc-source-card dc-source-card-action">
-        <span className="dc-source-icon dc-source-icon-warning" aria-hidden="true"><ClipboardList size={18}/></span>
-        <div className="dc-source-copy"><h2>Para revisar</h2><p>{reviewCount === 1 ? "indicado aguardando atribuição" : "indicados aguardando atribuição"}</p><button type="button" onClick={() => onTab("reviews")} className="dc-source-link">Abrir revisões <ArrowRight size={14}/></button></div>
-        <div className="dc-source-metric"><strong>{fmtNumber(reviewCount)}</strong><span>{reviewCount === 1 ? "pendência" : "pendências"}</span></div>
-      </article>
     </section>
     {runMetrics.length > 0 && <details className="dc-run-details"><summary>Ver métricas da última coleta</summary><dl className="dc-run-metrics">{runMetrics.map(([key, value]) => <div key={key}><dt>{importMetricLabels[key] ?? key.replace(/([A-Z])/g, " $1")}</dt><dd>{fmtNumber(value)}</dd></div>)}</dl></details>}
 
@@ -772,7 +752,6 @@ function DataCrazySyncPanel({ overview, refresh, refreshVersion, onTab }: { over
         <dl className="dc-crossmatch-stats">
           <div><dt>Entregadores na base</dt><dd>{fmtNumber(overview.referralCount)}</dd></div>
           <div><dt>Corridas importadas</dt><dd>{fmtNumber(overview.contributionTotal)}</dd></div>
-          <div><dt>Indicações para revisar</dt><dd>{fmtNumber(reviewCount)}</dd></div>
         </dl>
         <div className="dc-crossmatch-note"><History size={16}/><p>A atribuição dos indicados é definida exclusivamente pela pipeline do negócio.</p></div>
         <button type="button" onClick={() => onTab("referrals")} className="dc-panel-link">Consultar entregadores <ArrowRight size={15}/></button>
@@ -1031,7 +1010,7 @@ const historyStatusLabels: Record<ImportHistoryEntry["status"], string> = {
   staging: "Em andamento", completed: "Concluída", failed: "Falhou", cancelled: "Cancelada",
 };
 const importMetricLabels: Record<string, string> = {
-  total: "Linhas válidas", ambiguous: "Para revisar", ignored: "Ignoradas",
+  total: "Linhas válidas", ambiguous: "Atribuições ambíguas", autoAssignedFirstPipeline: "Atribuídos ao primeiro pipeline", ignored: "Ignoradas",
   invalidUuid: "Sem UUID do entregador", uuidReferrals: "Indicados com UUID",
   unidentified: "Indicados pelo ID do lead", excludedNoPipeline: "Fora das pipelines mapeadas",
   phoneUnavailable: "Telefone indisponível",
@@ -1168,93 +1147,6 @@ function ImportHistoryPanel() {
   </div>;
 }
 
-function ReviewsPanel({ overview, refresh }: { overview: AdminOverview; refresh: () => Promise<void> }) {
-  const [reviews, setReviews] = useState<Review[]>(overview.reviews);
-  const [unidentifiedReviews, setUnidentifiedReviews] = useState<Review[]>([]);
-  const [unidentifiedReviewCount, setUnidentifiedReviewCount] = useState(0);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [busyId, setBusyId] = useState("");
-  const [selectionByReview, setSelectionByReview] = useState<Record<string, string>>({});
-  const [loadingMore, setLoadingMore] = useState(false);
-  useEffect(() => { setReviews(overview.reviews); }, [overview.reviews]);
-  useEffect(() => {
-    let active = true;
-    const client = getSupabase();
-    if (!client) return;
-    void client.schema(DATA_SCHEMA).from("data_crazy_unidentified_referrals")
-      .select("record_id,lead_id,name,region,raw_influencer", { count: "exact" })
-      .eq("needs_review", true).order("lead_id").range(0, 49)
-      .then(({ data, count, error: queryError }) => {
-        if (!active) return;
-        if (queryError) { setError(queryError.message); return; }
-        setUnidentifiedReviews((data ?? []).map((item) => ({
-          id: item.record_id, uuid: null, lead_id: item.lead_id, is_unidentified: true,
-          name: item.name, region: item.region, raw_influencer: item.raw_influencer, status: "open",
-        })));
-        setUnidentifiedReviewCount(count ?? 0);
-      });
-    return () => { active = false; };
-  }, [overview.reviewCount]);
-
-  async function loadMore() {
-    const client = getSupabase();
-    if (!client) return;
-    setLoadingMore(true); setError("");
-    const [uuidResult, unidentifiedResult] = await Promise.all([
-      client.schema(DATA_SCHEMA).from("attribution_reviews")
-        .select("id,uuid,name,region,raw_influencer,status")
-        .eq("status", "open").order("created_at").order("id")
-        .range(reviews.length, reviews.length + 49),
-      client.schema(DATA_SCHEMA).from("data_crazy_unidentified_referrals")
-        .select("record_id,lead_id,name,region,raw_influencer", { count: "exact" })
-        .eq("needs_review", true).order("lead_id")
-        .range(unidentifiedReviews.length, unidentifiedReviews.length + 49),
-    ]);
-    if (uuidResult.error) setError(uuidResult.error.message);
-    else setReviews((current) => [...current, ...((uuidResult.data ?? []) as Review[])]);
-    if (unidentifiedResult.error) setError(unidentifiedResult.error.message);
-    else {
-      setUnidentifiedReviews((current) => [...current, ...((unidentifiedResult.data ?? []).map((item) => ({
-        id: item.record_id, uuid: null, lead_id: item.lead_id, is_unidentified: true,
-        name: item.name, region: item.region, raw_influencer: item.raw_influencer, status: "open",
-      })))]);
-      setUnidentifiedReviewCount(unidentifiedResult.count ?? 0);
-    }
-    setLoadingMore(false);
-  }
-
-  async function assign(review: Review) {
-    const influencerId = selectionByReview[review.id];
-    if (!influencerId) return;
-    setBusyId(review.id); setError(""); setNotice("");
-    try {
-      if (review.lead_id) await callAdminApi("referral-assignment", { leadId: review.lead_id, influencerId });
-      else await callAdminApi("review-assign", { reviewId: review.id, influencerId });
-      setSelectionByReview((current) => { const next = { ...current }; delete next[review.id]; return next; });
-      setNotice(`Atribuição de ${review.name || review.lead_id || review.uuid} salva.`);
-      await refresh();
-    }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "A atribuição não foi atualizada."); }
-    finally { setBusyId(""); }
-  }
-
-  return <section className="overflow-hidden portal-panel">
-    <div className="border-b border-border-subtle px-4 py-5 sm:px-6"><h2 className="text-base font-semibold">Atribuições para revisar</h2><p className="mt-1 text-sm text-muted-foreground">Escolha o responsável pelos indicados que aparecem em mais de uma pipeline.</p></div>
-    {error && <p role="alert" className="m-4 form-error">{error}</p>}
-    {notice && <p role="status" className="mx-4 mt-4 rounded-lg bg-status-success-surface px-3.5 py-3 text-sm text-status-success">{notice}</p>}
-    {reviews.length + unidentifiedReviews.length === 0 ? <EmptyState title="Tudo revisado" detail="Não há atribuições pendentes neste momento."/> : <div className="admin-review-list divide-y divide-border-subtle">{[...reviews, ...unidentifiedReviews].map((review) => <div key={review.id} className="admin-review-row grid gap-3 px-4 py-4 sm:grid-cols-[1fr_1fr_auto] sm:items-center sm:px-6">
-      <div className="admin-review-identity"><div className="admin-review-name">{review.name || "Nome não informado"}</div><div className="mt-1 break-all text-xs text-muted-foreground">{review.lead_id ? `ID do lead · ${review.lead_id}` : `UUID · ${review.uuid}`}</div>{review.region && <div className="mt-1 text-xs text-muted-foreground">{review.region}</div>}</div>
-      <div className="rounded-lg bg-status-warning-surface px-3 py-2 text-sm text-status-warning">Recebido: <strong>{review.raw_influencer || "vazio"}</strong></div>
-      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-        <select aria-label={`Atribuir ${review.name || review.lead_id || review.uuid}`} value={selectionByReview[review.id] ?? ""} onChange={(event) => { setNotice(""); setSelectionByReview((current) => ({ ...current, [review.id]: event.target.value })); }} disabled={busyId === review.id} className="h-11 min-w-0 rounded-lg border border-input bg-white px-3 text-sm font-semibold text-ink-strong"><option value="">Selecionar influenciador</option>{overview.influencers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-        <button type="button" onClick={() => void assign(review)} disabled={busyId === review.id || !selectionByReview[review.id]} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-3 text-sm font-bold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50">{busyId === review.id ? <LoaderCircle size={15} className="animate-spin"/> : <Check size={15}/>}Salvar atribuição</button>
-      </div>
-    </div>)}</div>}
-    {(overview.reviewCount ?? (reviews.length + unidentifiedReviewCount)) > reviews.length + unidentifiedReviews.length && <button disabled={loadingMore} onClick={() => void loadMore()} className="load-more">{loadingMore ? "Carregando…" : "Mostrar mais revisões"}</button>}
-  </section>;
-}
-
 function AccountsPanel({ overview, refresh, onAdminNameSaved }: { overview: AdminOverview; refresh: () => Promise<void>; onAdminNameSaved: (userId: string, displayName: string | null) => void }) {
   const [email, setEmail] = useState(""); const [role, setRole] = useState<Role>("influencer"); const [influencerId, setInfluencerId] = useState(""); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [busy, setBusy] = useState(false);
   const [issued, setIssued] = useState<{ email: string; role: Role; code: string; expiresAt: string } | null>(null);
@@ -1295,7 +1187,7 @@ function AccountsPanel({ overview, refresh, onAdminNameSaved }: { overview: Admi
       <form onSubmit={invite} className="mt-5 space-y-3">
         <label className="block text-xs font-bold text-[#405b75]">E-mail do acesso<input type="email" required value={email} onChange={(event)=>setEmail(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-input px-3 text-xs outline-none focus:border-[#2b6cbb]" placeholder="parceiro@email.com"/></label>
         <label className="block text-xs font-bold text-[#405b75]">Perfil de acesso<select value={role} onChange={(event)=>{const nextRole=event.target.value as Role;setRole(nextRole);if(nextRole==="admin")setInfluencerId("");}} className="mt-1.5 h-11 w-full rounded-lg border border-input bg-white px-3 text-sm outline-none focus:border-[#2b6cbb]"><option value="influencer">Influenciador</option><option value="admin">Administrador</option></select></label>
-        {role === "influencer" ? <label className="block text-xs font-bold text-[#405b75]">Influenciador<select required value={influencerId} onChange={(event)=>setInfluencerId(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-input bg-white px-3 text-xs outline-none focus:border-[#2b6cbb]"><option value="">Selecione</option>{overview.availableInfluencers.map((item)=><option key={item.id} value={item.id}>{item.name}{item.is_demo ? " · demonstração" : ""}</option>)}</select></label> : <p className="rounded-lg bg-[#fff9e9] px-3 py-2.5 text-xs leading-5 text-[#785b1d]">Administradores podem importar planilhas, revisar atribuições e liberar outros acessos.</p>}
+        {role === "influencer" ? <label className="block text-xs font-bold text-[#405b75]">Influenciador<select required value={influencerId} onChange={(event)=>setInfluencerId(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-input bg-white px-3 text-xs outline-none focus:border-[#2b6cbb]"><option value="">Selecione</option>{overview.availableInfluencers.map((item)=><option key={item.id} value={item.id}>{item.name}{item.is_demo ? " · demonstração" : ""}</option>)}</select></label> : <p className="rounded-lg bg-[#fff9e9] px-3 py-2.5 text-xs leading-5 text-[#785b1d]">Administradores podem sincronizar dados e liberar outros acessos.</p>}
         {error&&<p className="rounded-lg bg-status-danger-surface p-2.5 text-xs text-status-danger">{error}</p>}{notice&&<p className="rounded-lg bg-status-success-surface p-2.5 text-xs text-brand-strong">{notice}</p>}
         <button disabled={busy} className="flex h-11 items-center gap-2 rounded-lg bg-primary px-3.5 text-sm font-bold text-white hover:bg-primary-hover disabled:opacity-55">{busy?<LoaderCircle size={14} className="animate-spin"/>:<Mail size={14}/>}Gerar código de {role === "admin" ? "administrador" : "acesso"}</button>
       </form>
